@@ -18,10 +18,4 @@ B_c, B_r = (32, 32)
 grid_dim = (seq_len, 1, 1)
 block_dim = (B_c, 1, 1)
 with torch.autograd.profiler.profile(use_cuda=True) as prof:
-    minimal_result = minimal_attn.forward(
-        q,
-        k,
-        v,
-        B_c,
-        B_r,
-    )
+    minimal_result = minimal_attn.forward(q, k, v, B_c, B_r, *grid_dim, *block_dim)

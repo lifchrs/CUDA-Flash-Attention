@@ -98,13 +98,17 @@ __global__ void serial_flash_attn_kernel(
     }
 }
 
-torch::Tensor forward(torch::Tensor Q, torch::Tensor K, torch::Tensor V, const int B_c, const int B_r, const int grid_dim_x, const int grid_dim_y, const int grid_dim_z, const int block_dim_x, const int block_dim_y, const int block_dim_z, const int sram_size)
+torch::Tensor forward(torch::Tensor Q, torch::Tensor K, torch::Tensor V, const int B_c, const int B_r, const int grid_dim_x, const int grid_dim_y, const int grid_dim_z, const int block_dim_x, const int block_dim_y, const int block_dim_z)
 {
 
-    const int B = Q.size(0);
-    const int nh = Q.size(1);
-    const int N = Q.size(2);
-    const int d = Q.size(3);
+    const int B = 1;
+    Q.size(0);
+    const int nh = 1;
+    Q.size(1);
+    const int N = Q.size(0);
+    Q.size(2);
+    const int d = Q.size(1);
+    Q.size(3);
 
     const int Tc = ceil((float)N / B_c);
     const int Tr = ceil((float)N / B_r);
