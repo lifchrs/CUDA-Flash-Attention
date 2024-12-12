@@ -1,6 +1,9 @@
 #include <cuda.h>
+#include <cuda_runtime.h>
+#include <cmath>    // for sqrt
 
 using matrix = float *;
+
 
 __global__ void serial_flash_attn_kernel(
     const int N,   // sequence length
@@ -19,7 +22,7 @@ __global__ void serial_flash_attn_kernel(
     const int block_sz = d * B_c;
 
     // Allocate shared memory for tiles and intermediate results
-    __shared__ float sram[4 * block_sz];
+    extern __shared__ float* sram;
     matrix Q_i = sram;                // Query tile
     matrix K_j = sram + block_sz;     // Key tile
     matrix V_j = sram + 2 * block_sz; // Value tile
@@ -62,14 +65,14 @@ __global__ void serial_flash_attn_kernel(
                 float max_val = S[q_idx * B_c];
                 for (int k_idx = 1; k_idx < B_c; k_idx++)
                 {
-                    max_val = max(max_val, S[q_idx * B_c + k_idx]);
+                    max_val = (max_val > S[q_idx * B_c + k_idx] ? max_val : S[q_idx * B_c + k_idx]);
                 }
 
                 // Compute exp and sum
                 float sum = 0.0f;
                 for (int k_idx = 0; k_idx < B_c; k_idx++)
                 {
-                    S[q_idx * B_c + k_idx] = __expf(S[q_idx * B_c + k_idx] - max_val);
+                    S[q_idx * B_c + k_idx] = expf(S[q_idx * B_c + k_idx] - max_val);
                     sum += S[q_idx * B_c + k_idx];
                 }
 
@@ -98,42 +101,14 @@ __global__ void serial_flash_attn_kernel(
     }
 }
 
-torch::Tensor forward(torch::Tensor Q, torch::Tensor K, torch::Tensor V, const int B_c, const int B_r, const int grid_dim_x, const int grid_dim_y, const int grid_dim_z, const int block_dim_x, const int block_dim_y, const int block_dim_z)
+void forward(float* Q, float* K, float* V, const int B_c, const int B_r, const int grid_dim_x, const int grid_dim_y, const int grid_dim_z, const int block_dim_x, const int block_dim_y, const int block_dim_z, const int N, const int d, const int T_c, const int T_r, float* O)
 {
-
-    const int B = 1;
-    Q.size(0);
-    const int nh = 1;
-    Q.size(1);
-    const int N = Q.size(0);
-    Q.size(2);
-    const int d = Q.size(1);
-    Q.size(3);
-
-    const int Tc = ceil((float)N / B_c);
-    const int Tr = ceil((float)N / B_r);
-    const float softmax_scale = 1.0 / sqrt(d);
-
-    // Initialize O, l, m to HBM
-    auto O = torch::zeros_like(Q);
-    auto l = torch::zeros({B, nh, N});
-    auto m = torch::full({B, nh, N}, -INFINITY);
-    torch::Device device(torch::kCUDA);
-    l = l.to(device);
-    m = m.to(device);
-
-    // Calculate SRAM size needed per block
-    const int sram_size = (3 * B_c * d * sizeof(float)) + (B_c * B_r * sizeof(float));
-    int max_sram_size;
-    cudaDeviceGetAttribute(&max_sram_size, cudaDevAttrMaxSharedMemoryPerBlock, 0);
-    printf("Max shared memory: %d, requested shared memory: %d \\n", max_sram_size, sram_size);
 
     dim3 grid_dim(grid_dim_x, grid_dim_y, grid_dim_z);     // batch_size x num_heads
     dim3 block_dim(block_dim_x, block_dim_y, block_dim_z); // B_c threads per block
+    const int sram_size = (3 * B_c * d * sizeof(float)) + (B_c * B_r * sizeof(float));
 
-    forward_kernel<<<grid_dim, block_dim, sram_size>>>(
-        Q.data_ptr<float>(), K.data_ptr<float>(), V.data_ptr<float>(),
-        N, d, Tc, Tr, B_c, B_r, softmax_scale,
-        l.data_ptr<float>(), m.data_ptr<float>(), O.data_ptr<float>());
-    return O;
+
+    serial_flash_attn_kernel<<<grid_dim, block_dim, sram_size>>>(N, d, Q, K, V, B_c, B_r, T_c, T_r, O);
+
 }

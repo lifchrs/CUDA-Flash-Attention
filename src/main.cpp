@@ -3,18 +3,24 @@
 #include <sstream>
 #include <vector>
 #include <stdexcept>
+#include "flash_attention.cuh"
+
+
+extern void forward(float* Q, float* K, float* V, const int B_c, const int B_r, const int grid_dim_x, const int grid_dim_y, const int grid_dim_z, const int block_dim_x, const int block_dim_y, const int block_dim_z, const int N, const int d, const int T_c, const int T_r, float* O);
 
 struct Matrix
 {
     float *data;
-    size_t height;
-    size_t width;
+    int height;
+    int width;
 
-    Matrix(size_t h, size_t w, float val) : height(h), width(w)
+    Matrix(int h, int w, float val) : height(h), width(w)
     {
         data = new float[height * width];
         std::fill(data, data + (height * width), val);
     }
+
+    Matrix(float* data, int h, int w): data(data), height(h), width(w){}
 
     ~Matrix()
     {
@@ -32,7 +38,7 @@ Matrix readMatrixFromFile(const std::string &fileName)
 
     std::vector<std::vector<float>> tempMatrix;
     std::string line;
-    size_t width = 0;
+    int width = 0;
 
     while (std::getline(file, line))
     {
@@ -56,13 +62,13 @@ Matrix readMatrixFromFile(const std::string &fileName)
         tempMatrix.push_back(row);
     }
 
-    size_t height = tempMatrix.size();
+    int height = tempMatrix.size();
 
     float *data = new float[height * width];
 
-    for (size_t i = 0; i < height; ++i)
+    for (int i = 0; i < height; ++i)
     {
-        for (size_t j = 0; j < width; ++j)
+        for (int j = 0; j < width; ++j)
         {
             data[i * width + j] = tempMatrix[i][j];
         }
@@ -73,18 +79,14 @@ Matrix readMatrixFromFile(const std::string &fileName)
 
 void printMatrix(const Matrix &matrix)
 {
-    for (size_t i = 0; i < matrix.height; ++i)
+    for (int i = 0; i < matrix.height; ++i)
     {
-        for (size_t j = 0; j < matrix.width; ++j)
+        for (int j = 0; j < matrix.width; ++j)
         {
             std::cout << matrix.data[i * matrix.width + j] << " ";
         }
         std::cout << "\n";
     }
-}
-
-void makeMatrix(const int width, const int height, const float val){
-
 }
 
 int main(int argc, char* argv[]) {
@@ -108,7 +110,7 @@ int main(int argc, char* argv[]) {
     const int N = Q.height;
     const int d = Q.width;
 
-    Matrix O = Matrix(N, d, 0)
+    Matrix O = Matrix(N, d, 0);
     // Matrix m = Matrix(1, N, -std::numeric_limits<float>::infinity())
     // Matrix l = Matrix(1, N, 0)
 
@@ -116,9 +118,13 @@ int main(int argc, char* argv[]) {
     const int B_c = std::stoi(argv[4]);
     const int B_r = std::stoi(argv[5]);
 
-    const dim3 grid_dim(std::stoi(argv[6]), std::stoi(argv[7]), std::stoi(argv[8]));
-    const dim3 block_dim(std::stoi(argv[9]), std::stoi(argv[10]), std::stoi(argv[11]));
+    const int T_c = (N + B_c - 1) / B_c;
+    const int T_r = (N + B_r - 1) / B_r;
 
-    serial_flash_attn_kernel<<<grid_dim, block_dim, sram_size>>>(N, d, Q.data, K.data, V.data, B_c, B_r, Tc, Tr, O.data);
+    forward(Q.data, K.data, V.data, B_c, B_r, std::stoi(argv[6]), std::stoi(argv[7]), std::stoi(argv[8]), std::stoi(argv[9]), std::stoi(argv[10]), std::stoi(argv[11]), N, d, T_c, T_r, O.data);
+
+    // std::cout << "hi";
+    printMatrix(O);
 
     return 0;
+}
