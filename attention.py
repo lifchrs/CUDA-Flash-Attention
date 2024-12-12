@@ -1,9 +1,11 @@
+print("l")
 from torch.utils.cpp_extension import load
+print("hi")
 import torch
 
 # Load the CUDA kernel as a python module
 minimal_attn = load(
-    name="minimal_attn", sources=["main.cpp", "flash.cu"], extra_cuda_cflags=["-O2"]
+    name="flash_attention", sources=["main.cpp", "flash_attention.cu"], extra_cuda_cflags=["-O2"]
 )
 
 seq_len, embd = (4096, 512)
