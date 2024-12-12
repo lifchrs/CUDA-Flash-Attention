@@ -18,7 +18,7 @@ __global__ void serial_flash_attn_kernel(
     const int block_sz = d * B_c;
     
     // Allocate shared memory for tiles and intermediate results
-    __shared__ float sram[4 * d * B_c];
+    extern __shared__ float sram[];
     matrix Q_i = sram;                    // Query tile
     matrix K_j = sram + block_sz;         // Key tile
     matrix V_j = sram + 2 * block_sz;     // Value tile
@@ -49,7 +49,6 @@ __global__ void serial_flash_attn_kernel(
             
             // Apply softmax row-wise
             for (int q_idx = 0; q_idx < B_r; q_idx++) {
-                // Find max for numerical stability
                 float max_val = S[q_idx * B_c];
                 for (int k_idx = 1; k_idx < B_c; k_idx++) {
                     max_val = max(max_val, S[q_idx * B_c + k_idx]);
