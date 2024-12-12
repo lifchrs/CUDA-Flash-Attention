@@ -2,6 +2,7 @@ from torch.utils.cpp_extension import load
 import torch
 import os
 import check
+import naive_attention
 # Load the CUDA kernel as a python module
 minimal_attn = load(
     name="flash_attention", sources=["main.cpp", "flash_attention.cu"], extra_cuda_cflags=["-O2"]
@@ -25,9 +26,9 @@ with torch.autograd.profiler.profile(use_cuda=True) as prof:
         'v_file': 'v_matrix.txt',
     }
     
-    write_matrix(write_random(32*4, 32*4), files['q_file'])
-    write_matrix(write_random(32*4, 32*4), files['k_file'])
-    write_matrix(write_random(32*4, 32*4), files['v_file'])
+    q_matrix = write_matrix(write_random(32*4, 32*4), files['q_file'])
+    k_matrix = write_matrix(write_random(32*4, 32*4), files['k_file'])
+    v_matrix = write_matrix(write_random(32*4, 32*4), files['v_file'])
     
     B_c = 32
     B_r = 32
@@ -37,7 +38,12 @@ with torch.autograd.profiler.profile(use_cuda=True) as prof:
     block_dim_x = 16
     block_dim_y = 16
     block_dim_z = 16
-    cmd = f'{q_file} {k_file} {v_file} {B_c} {B_r} {grid_dim_x} {grid_dim_y} {grid_dim_z} {block_dim_x} {block_dim_y} {block_dim_z}'
+    output_file = 'output.txt'
+    cmd = f'./main {q_file} {k_file} {v_file} {B_c} {B_r} {grid_dim_x} {grid_dim_y} {grid_dim_z} {block_dim_x} {block_dim_y} {block_dim_z} > {output_file}'
     
     os.system(cmd) 
-    minimal_result = minimal_attn.forward(q, k, v, B_c, B_r, *grid_dim, *block_dim)
+    output = read_matrix(output_file)
+    q_read_matrix(files['q_file'])
+    expected_output = manual_attention(q_matrix, k_matrix, v_matrix)
+    print(output - expected_output)
+    # minimal_result = minimal_attn.forward(q, k, v, B_c, B_r, *grid_dim, *block_dim)

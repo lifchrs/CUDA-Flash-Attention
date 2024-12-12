@@ -7,7 +7,13 @@ def write_matrix(matrix, file_name):
     with open(file_name, "w") as file:
         for row in matrix:
             file.write(" ".join(map(str, row)) + "\n")
+    return matrix
 
+
+def create_random(width, height, seed=0):
+    np.random.seed(seed)
+    matrix = np.random.uniform(size=(height, width))
+    return matrix
 
 def write_random(width, height, seed=0):
     np.random.seed(seed)
