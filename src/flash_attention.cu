@@ -25,7 +25,7 @@ void serial_flash_attn_kernel(
     
     // Correct shared memory allocation
     // extern __shared__ float sram[];
-    float sram[B_r*d*4];
+    float sram[(B_r * d + 2 * B_c * d + B_r * B_c)];
     matrix Q_i = sram;                      // Query tile: B_r × d
     matrix K_j = &sram[B_r * d];           // Key tile: B_c × d
     matrix V_j = &sram[B_r * d + B_c * d]; // Value tile: B_c × d
@@ -56,7 +56,7 @@ void serial_flash_attn_kernel(
                     for (int h = 0; h < d; h++) {
                         score += Q_i[q_idx * d + h] * K_j[k_idx * d + h];
                     }
-                    S[q_idx * B_c + k_idx] = score;// * scale;
+                    S[q_idx * B_c + k_idx] = score * scale;
                     // fprintf(stderr, "computerd score %f \n", S[q_idx * B_c + k_idx]);
                 }
             }
@@ -92,11 +92,13 @@ void serial_flash_attn_kernel(
                     
                     const int out_idx = row_idx * d + h;
 
-                    fprintf(stderr, "out ind %d \n", out_idx);
+                    // fprintf(stderr, "out ind %d \n", out_idx);
                     O[out_idx] = (1.0f / new_l) * (
                         prev_l * expf(prev_m - new_m) * O[out_idx] +
                         expf(max_val - new_m) * pv
                     );
+                    // fprintf(stderr, "O[%d] = %f\n", out_idx, O[out_idx]);
+
                 }
 
                 // Update m and l
@@ -130,16 +132,16 @@ void forward(
     serial_flash_attn_kernel(
         N, d, Q, K, V, B_c, B_r, T_c, T_r, O, l, m
     );
-    for(int i = 0; i < 2; i++) for(int j =0 ; j < 2; j++) fprintf(stderr, "%f ", Q[i*2+j]);
-    fprintf(stderr, "\n");
+    // for(int i = 0; i < 2; i++) for(int j =0 ; j < 2; j++) fprintf(stderr, "%f ", Q[i*2+j]);
+    // fprintf(stderr, "\n");
 
-    for(int i = 0; i < 2; i++) for(int j =0 ; j < 2; j++) fprintf(stderr, "%f ", K[i*2+j]);
-    fprintf(stderr, "\n");
+    // for(int i = 0; i < 2; i++) for(int j =0 ; j < 2; j++) fprintf(stderr, "%f ", K[i*2+j]);
+    // fprintf(stderr, "\n");
 
-    for(int i = 0; i < 2; i++) for(int j =0 ; j < 2; j++) fprintf(stderr, "%f ", V[i*2+j]);
-    fprintf(stderr, "\n");
+    // for(int i = 0; i < 2; i++) for(int j =0 ; j < 2; j++) fprintf(stderr, "%f ", V[i*2+j]);
+    // fprintf(stderr, "\n");
 
 
-    for(int i = 0; i < 2; i++) for(int j =0 ; j < 2; j++) fprintf(stderr, "%f ", O[i*2+j]);
-    fprintf(stderr, "\n");
+    // for(int i = 0; i < 2; i++) for(int j =0 ; j < 2; j++) fprintf(stderr, "%f ", O[i*2+j]);
+    // fprintf(stderr, "\n");
 }

@@ -6,15 +6,15 @@ import torch
 def write_matrix(matrix, file_name):
     with open(file_name, "w") as file:
         for row in matrix:
-            file.write(" ".join(map(str, row)) + "\n")
+            file.write(" ".join(f"{x:.9f}" for x in row) + "\n")
     return matrix
 
 
 def create_random(width, height, seed=0):
     np.random.seed(seed)
     matrix = np.random.uniform(size=(height, width))
-    # return matrix
-    return [[1,2],[3,4]]
+    return matrix
+    # return [[1,2],[3,4]]
 
 def write_random(width, height, seed=0):
     np.random.seed(seed)
