@@ -4,6 +4,7 @@
 #include <vector>
 #include <stdexcept>
 #include "flash_attention.cuh"
+#include <limits>
 
 
 extern void forward(float* Q, float* K, float* V, const int B_c, const int B_r, const int grid_dim_x, const int grid_dim_y, const int grid_dim_z, const int block_dim_x, const int block_dim_y, const int block_dim_z, const int N, const int d, const int T_c, const int T_r, float* O);
@@ -111,8 +112,8 @@ int main(int argc, char* argv[]) {
     const int d = Q.width;
 
     Matrix O = Matrix(N, d, 0);
-    // Matrix m = Matrix(1, N, -std::numeric_limits<float>::infinity())
-    // Matrix l = Matrix(1, N, 0)
+    Matrix m = Matrix(1, N, -(std::numeric_limits<float>::infinity()));
+    Matrix l = Matrix(1, N, 0);
 
 
     const int B_c = std::stoi(argv[4]);
@@ -121,7 +122,7 @@ int main(int argc, char* argv[]) {
     const int T_c = (N + B_c - 1) / B_c;
     const int T_r = (N + B_r - 1) / B_r;
 
-    forward(Q.data, K.data, V.data, B_c, B_r, std::stoi(argv[6]), std::stoi(argv[7]), std::stoi(argv[8]), std::stoi(argv[9]), std::stoi(argv[10]), std::stoi(argv[11]), N, d, T_c, T_r, O.data);
+    forward(Q.data, K.data, V.data, B_c, B_r, std::stoi(argv[6]), std::stoi(argv[7]), std::stoi(argv[8]), std::stoi(argv[9]), std::stoi(argv[10]), std::stoi(argv[11]), N, d, T_c, T_r, O.data, l.data, m.data);
 
     // std::cout << "hi";
     printMatrix(O);

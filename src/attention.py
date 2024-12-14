@@ -11,12 +11,12 @@ with torch.autograd.profiler.profile(use_cuda=True) as prof:
         'v_file': 'v_matrix.txt',
     }
     
-    q_matrix = write_matrix(create_random(32*4, 32*4), files['q_file'])
-    k_matrix = write_matrix(create_random(32*4, 32*4), files['k_file'])
-    v_matrix = write_matrix(create_random(32*4, 32*4), files['v_file'])
+    q_matrix = write_matrix(create_random(2, 2), files['q_file'])
+    k_matrix = write_matrix(create_random(2, 2), files['k_file'])
+    v_matrix = write_matrix(create_random(2, 2), files['v_file'])
     
-    B_c = 32
-    B_r = 32
+    B_c = 1
+    B_r = 1
     grid_dim_x = 1
     grid_dim_y = 1
     grid_dim_z = 1

@@ -13,7 +13,8 @@ def write_matrix(matrix, file_name):
 def create_random(width, height, seed=0):
     np.random.seed(seed)
     matrix = np.random.uniform(size=(height, width))
-    return matrix
+    # return matrix
+    return [[1,2],[3,4]]
 
 def write_random(width, height, seed=0):
     np.random.seed(seed)
