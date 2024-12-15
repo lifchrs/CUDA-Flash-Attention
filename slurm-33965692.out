@@ -1,0 +1,4 @@
+Successfully paused profiling.
+srun: Step created for StepId=33965692.1
+slurmstepd: error: *** STEP 33965692.1 ON nid002684 CANCELLED AT 2024-12-15T22:37:10 DUE TO TIME LIMIT ***
+slurmstepd: error: *** JOB 33965692 ON nid002684 CANCELLED AT 2024-12-15T22:37:10 DUE TO TIME LIMIT ***

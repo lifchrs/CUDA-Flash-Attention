@@ -7,6 +7,8 @@
 #include <limits>
 #include <chrono>
 #include <iomanip>
+#include <cstring>
+#include <random>
 
 extern void forward_serial(
     float *Q_h,           // Query matrix
@@ -111,6 +113,27 @@ Matrix readMatrixFromFile(const std::string &fileName)
     return {data, height, width};
 }
 
+Matrix generate_gaussian_matrix(int height, int width)
+{
+    float mean = 0;
+    float stddev = 1;
+    // Create a random number generator
+    std::random_device rd;
+    std::mt19937 gen(rd());                             // Seeded Mersenne Twister generator
+    std::normal_distribution<float> dist(mean, stddev); // Gaussian distribution
+
+    // Allocate memory for the matrix
+    Matrix matrix(height, width, 0);
+
+    // Fill the matrix with Gaussian random variables
+    for (int i = 0; i < height * width; ++i)
+    {
+        matrix.data[i] = dist(gen);
+    }
+
+    return matrix;
+}
+
 void writeMatrixToFile(const Matrix &matrix, const std::string &fileName)
 {
     const int max_precision = std::numeric_limits<float>::max_digits10;
@@ -121,9 +144,9 @@ void writeMatrixToFile(const Matrix &matrix, const std::string &fileName)
         throw std::runtime_error("Failed to open file: " + fileName);
     }
 
-    for (size_t i = 0; i < matrix.height; ++i)
+    for (int i = 0; i < matrix.height; ++i)
     {
-        for (size_t j = 0; j < matrix.width; ++j)
+        for (int j = 0; j < matrix.width; ++j)
         {
             file << std::setprecision(max_precision) << std::fixed << matrix.data[i * matrix.width + j];
             if (j < matrix.width - 1)
@@ -190,7 +213,7 @@ int main(int argc, char *argv[])
     std::string k_file = argv[5];
     std::string v_file = argv[6];
     std::string o_file = argv[7];
-    std::cerr << "files\n\n\n";
+
     for (int i = 4; i < 8; i++)
     {
         std::cerr << argv[i] << "\n";
@@ -209,16 +232,20 @@ int main(int argc, char *argv[])
 
     const int use_parallel = std::stoi(argv[15]);
 
-    std::cerr << "a\n";
-    Matrix Q = readMatrixFromFile(q_file);
-    Matrix K = readMatrixFromFile(k_file);
-    Matrix V = readMatrixFromFile(v_file);
-    std::cerr << "b\n";
+    Matrix Q = generate_gaussian_matrix(batch_size * num_heads * seq_len, emb_dim);
+    Matrix K = generate_gaussian_matrix(batch_size * num_heads * seq_len, emb_dim);
+    Matrix V = generate_gaussian_matrix(batch_size * num_heads * seq_len, emb_dim);
+
+    if (q_file != "none")
+    {
+        Q = readMatrixFromFile(q_file);
+        K = readMatrixFromFile(k_file);
+        V = readMatrixFromFile(v_file);
+    }
 
     Matrix O = Matrix(batch_size * num_heads * seq_len, emb_dim, 0);
     Matrix m = Matrix(batch_size * num_heads, seq_len, -(std::numeric_limits<float>::infinity()));
     Matrix l = Matrix(batch_size * num_heads, seq_len, 0);
-    std::cerr << "c\n";
 
     auto forward = (use_parallel ? forward_parallel : forward_serial);
 
@@ -227,28 +254,22 @@ int main(int argc, char *argv[])
         reset(O, m, l);
         forward(Q.data, K.data, V.data, O.data, m.data, l.data, B_c, B_r, batch_size, num_heads, seq_len, emb_dim, block_dim_y);
     }
-    std::cerr << "d\n";
 
     long long total_time = 0;
     for (int i = 0; i < num_runs; ++i)
     {
         reset(O, m, l);
-        std::cout << "timing" << std::endl;
         auto start = std::chrono::high_resolution_clock::now();
         forward(Q.data, K.data, V.data, O.data, m.data, l.data, B_c, B_r, batch_size, num_heads, seq_len, emb_dim, block_dim_y);
         auto end = std::chrono::high_resolution_clock::now();
 
         total_time += std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
     }
-    std::cerr << "e\n";
 
     std::cout << static_cast<double>(total_time) / num_runs << std::endl;
 
-    writeMatrixToFile(O, o_file);
-    std::cerr << "f\n";
-
-    if (print_matrix)
-        printMatrix(O);
+    if (print_matrix && o_file != "none")
+        writeMatrixToFile(O, o_file);
 
     return 0;
 }

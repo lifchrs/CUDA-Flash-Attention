@@ -1,4 +1,3 @@
-# from torch.utils.cpp_extension import load
 import torch
 import os
 from naive_attention import manual_attention
@@ -20,7 +19,7 @@ def write_matrix(matrix, file_name):
 
 
 def create_random(batch_size, num_heads,seq_len, emb_dim, seed=0):
-    # np.random.seed(seed)
+    np.random.seed(seed)
     matrix = np.random.randn(batch_size, num_heads, seq_len, emb_dim)
     return matrix.reshape((batch_size * num_heads * seq_len, emb_dim))
     # return (np.random.randn(seq_len, emb_dim)[np.newaxis, np.newaxis, :, :]+ np.zeros((batch_size, num_heads, seq_len, emb_dim))).reshape((batch_size * num_heads * seq_len, emb_dim))
@@ -31,20 +30,20 @@ def read_matrix(file_name, batch_size, num_heads,seq_len, emb_dim):
 
 
 def run_from_frame(df, row, warmups=3, repeats=2, print_o_matrix=False, check=False):
-    os.system(f"echo \"\" > {output_file}")
     row = df.iloc[row]
 
     batch_size, num_heads, seq_len, emb_dim = row["batch_size"], row["num_heads"], row["seq_len"], row["emb_dim"]
     
-    q_matrix = write_matrix(create_random(batch_size, num_heads,seq_len, emb_dim), files["q_file"])
-    k_matrix = write_matrix(create_random(batch_size, num_heads,seq_len, emb_dim), files["k_file"])
-    v_matrix = write_matrix(create_random(batch_size, num_heads,seq_len, emb_dim), files["v_file"])
+    if check:
+        q_matrix = write_matrix(create_random(batch_size, num_heads,seq_len, emb_dim), files["q_file"])
+        k_matrix = write_matrix(create_random(batch_size, num_heads,seq_len, emb_dim), files["k_file"])
+        v_matrix = write_matrix(create_random(batch_size, num_heads,seq_len, emb_dim), files["v_file"])
 
     B_c, B_r = row["B_c"], row["B_r"]
     block_dim_y = row["block_dim_y"]
     
     assert seq_len % B_r == 0 and emb_dim % B_c == 0, "Block size doesn't divide"
-    assert B_r * block_dim_y <= 1024, "Block must have <= 1024 threads"
+    assert (B_r * emb_dim + 2 * B_c * emb_dim + B_r * B_c) * 4 <= 98304, "Using too much shmem"
 
     result = subprocess.run(
         [
@@ -52,10 +51,10 @@ def run_from_frame(df, row, warmups=3, repeats=2, print_o_matrix=False, check=Fa
             str(repeats),
             str(warmups),
             "1" if print_o_matrix else "0",
-            files["q_file"],
-            files["k_file"],
-            files["v_file"],
-            str(output_file),
+            files["q_file"] if check else "none",
+            files["k_file"] if check else "none",
+            files["v_file"] if check else "none",
+            str(output_file) if check else "none",
             str(batch_size),
             str(num_heads),
             str(seq_len),
@@ -68,10 +67,8 @@ def run_from_frame(df, row, warmups=3, repeats=2, print_o_matrix=False, check=Fa
         capture_output=True,
         text=True,
     )
-    
-    print(output_file, "done \n\n")
+
     print(result)
-    print("after res\n")
     
     if check:             
         output = read_matrix(output_file, batch_size, num_heads, seq_len, emb_dim)
@@ -86,7 +83,8 @@ def run_from_frame(df, row, warmups=3, repeats=2, print_o_matrix=False, check=Fa
 
         print("max error", error.max())
         print("mean error", error.mean())
-    return (result.stdout, error.max(), error.mean())
+
+    return result.stdout
 
 
 files = {
@@ -95,42 +93,5 @@ files = {
     "v_file": "v_matrix.txt",
 }
 output_file = "output.txt"
-
-overall_max = -1
-overall_sum = 0
-for row in range(len(df)):
-    _, max_error, mean_error = run_from_frame(df, row, check=True)
-    overall_sum += mean_error
-    overall_max = max(max_error, overall_max)
-
-print("overall max", overall_max)
-print("overall mean", overall_sum/len(df))
-    
-    
-
-
-# N = 32*4
-# d = 100
-# q_matrix = write_matrix(create_random(N, d), files["q_file"])
-# k_matrix = write_matrix(create_random(N, d), files["k_file"])
-# v_matrix = write_matrix(create_random(N, d), files["v_file"])
-
-# B_c = 16
-# B_r = 16
-# grid_dim_x = 1
-# grid_dim_y = 1
-# grid_dim_z = 1
-# block_dim_x = 16
-# block_dim_y = 16
-# block_dim_z = 16
-# cmd = f'./build/attention {files["q_file"]} {files["k_file"]} {files["v_file"]} {B_c} {B_r} {grid_dim_x} {grid_dim_y} {grid_dim_z} {block_dim_x} {block_dim_y} {block_dim_z} > {output_file}'
-
-# os.system(cmd)
-
-# output = read_matrix(output_file)
-# # q_read_matrix(files['q_file'])
-# expected_output = manual_attention(q_matrix, k_matrix, v_matrix)
-# error = expected_output - output
-
-# print("max error", error.max())
-# print("mean error", error.mean())
+# run_from_frame(df, 0, check=True)
+print(run_from_frame(df, 0, check=False))
