@@ -21,9 +21,9 @@ def write_matrix(matrix, file_name):
 
 def create_random(batch_size, num_heads,seq_len, emb_dim, seed=0):
     np.random.seed(seed)
-    # matrix = np.random.randn(batch_size, num_heads, seq_len, emb_dim)
-    # return matrix.reshape((batch_size * num_heads * seq_len, emb_dim))
-    return (np.random.randn(seq_len, emb_dim)[np.newaxis, np.newaxis, :, :]+ np.zeros((batch_size, num_heads, seq_len, emb_dim))).reshape((batch_size * num_heads * seq_len, emb_dim))
+    matrix = np.random.randn(batch_size, num_heads, seq_len, emb_dim)
+    return matrix.reshape((batch_size * num_heads * seq_len, emb_dim))
+    # return (np.random.randn(seq_len, emb_dim)[np.newaxis, np.newaxis, :, :]+ np.zeros((batch_size, num_heads, seq_len, emb_dim))).reshape((batch_size * num_heads * seq_len, emb_dim))
 
 
 def read_matrix(file_name, batch_size, num_heads,seq_len, emb_dim):
