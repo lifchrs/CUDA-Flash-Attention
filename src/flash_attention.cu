@@ -234,7 +234,7 @@ __global__ void parallel_flash_attn_kernel(
     for (int j = 0; j < T_c; j++)
     {
 
-        for (int k_idx = threadIdx.x + threadIdx.y * B_r; k_idx < B_c; k_idx += B_r) // Can be parallelized
+        for (int k_idx = threadIdx.x; k_idx < B_c; k_idx += blockDim.x) // Can be parallelized
         {
             for (int h = 0; h < d; h++)
             {
@@ -245,23 +245,13 @@ __global__ void parallel_flash_attn_kernel(
 
         // threads needs to be synchronized within block since
         // each thread multiplies a row of Q with a tile of K and V
-        // and we need to make sure that the tiles of K and V have been computed
+        // and we need to make sure that the tiles of K and V are in sram
         __syncthreads();
-        // printf("%d %d %d %d \n", threadIdx.x, threadIdx.y, T_r, B_r);
-        // for (int i = 0 * threadIdx.y; i < T_r && threadIdx.y == 0; i += 1 + 0 * blockDim.y)
-        for (int i = threadIdx.y; i < T_r; i += blockDim.y)
-        {
-            // int sum2 = 0;
 
-            // if (threadIdx.x == 0)
-            // {
-            //     for (int m = 0; m <= 1 << 3; m++)
-            //     {
-            //         printf("test");
-            //         sum2 += m;
-            //     }
-            // }
-            // printf("%d %d %d \n", threadIdx.x, threadIdx.y, blockDim.y);
+        // printf("%d %d %d %d \n", threadIdx.x, threadIdx.y, T_r, B_r);
+        for (int i = 0; i < T_r; i++)
+        // for (int i = 0; i < T_r; i ++)
+        {
             const int tile_row_idx = threadIdx.x;
 
             for (int h = 0; h < d; h++)
@@ -312,7 +302,7 @@ __global__ void parallel_flash_attn_kernel(
 
             m[vector_head_batch_offset + output_row_idx] = new_m;
             l[vector_head_batch_offset + output_row_idx] = new_l;
-            __syncthreads();
+            // __syncthreads();
         }
     }
 }
@@ -337,7 +327,8 @@ void forward_parallel(
                                     cudaFuncAttributeMaxDynamicSharedMemorySize,
                                     98304));
     dim3 grid_dim(batch_size, num_heads);
-    dim3 block_dim(B_r, block_dim_y);
+    dim3 block_dim(B_r); // #, block_dim_y);
+    // block_dim = dim3(B_r, 1);
 
     const int sram_size = (B_r * d + 2 * B_c * d + B_r * B_c) * sizeof(float);
     const int matrix_size = batch_size * num_heads * seq_len * d * sizeof(float);
