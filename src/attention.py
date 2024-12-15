@@ -63,11 +63,15 @@ def run_from_frame(df, row, warmups=2, repeats=2, print_o_matrix=0, check=False)
     
     if check:             
         output = read_matrix(output_file)
-        expected_output = manual_attention(q_matrix, k_matrix, v_matrix)
+        expected_output = torch.nn.functional.scaled_dot_product_attention(
+            torch.tensor(q_matrix),
+            torch.tensor(k_matrix),
+            torch.tensor(v_matrix)
+        )
         error = np.abs(expected_output - output)
 
-        print("max error", error.max())
-        print("mean error", error.mean())
+        print("max error", error.max().item())
+        print("mean error", error.mean().item())
     return result.stdout
 
 
@@ -81,7 +85,7 @@ run_from_frame(df, 0, check=True)
 
 
 
-sys.exit()
+# sys.exit()
 
 # N = 32*4
 # d = 100
