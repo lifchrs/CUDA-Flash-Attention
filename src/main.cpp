@@ -9,33 +9,35 @@
 #include <iomanip>
 
 extern void forward_serial(
-    float *Q,             // Query matrix
-    float *K,             // Key matrix
-    float *V,             // Value matrix
-    float *O,             // Output matrix
-    float *m,             // Running maximum values
-    float *l,             // Running sum of exponentials
+    float *Q_h,           // Query matrix
+    float *K_h,           // Key matrix
+    float *V_h,           // Value matrix
+    float *O_h,           // Output matrix
+    float *m_h,           // Running maximum values
+    float *l_h,           // Running sum of exponentials
     const int B_c,        // Column block size
     const int B_r,        // Row block size
     const int batch_size, // Batch size
     const int num_heads,  // Number of heads
     const int seq_len,    // Sequence Length
-    const int d           // Hidden dimension
+    const int d,          // Hidden dimension
+    const int block_dim_y // Inversely proportional to how many tiles a thread attends to
 );
 
 extern void forward_parallel(
-    float *Q,             // Query matrix
-    float *K,             // Key matrix
-    float *V,             // Value matrix
-    float *O,             // Output matrix
-    float *m,             // Running maximum values
-    float *l,             // Running sum of exponentials
+    float *Q_h,           // Query matrix
+    float *K_h,           // Key matrix
+    float *V_h,           // Value matrix
+    float *O_h,           // Output matrix
+    float *m_h,           // Running maximum values
+    float *l_h,           // Running sum of exponentials
     const int B_c,        // Column block size
     const int B_r,        // Row block size
     const int batch_size, // Batch size
     const int num_heads,  // Number of heads
     const int seq_len,    // Sequence Length
-    const int d           // Hidden dimension
+    const int d,          // Hidden dimension
+    const int block_dim_y // Inversely proportional to how many tiles a thread attends to
 );
 
 // extern void forward(float *Q, float *K, float *V, const int B_c, const int B_r, const int grid_dim_x, const int grid_dim_y, const int grid_dim_z, const int block_dim_x, const int block_dim_y, const int block_dim_z, const int N, const int d, const int T_c, const int T_r, float *O);
@@ -168,17 +170,17 @@ void reset(Matrix &O, Matrix &m, Matrix &l)
 
 int main(int argc, char *argv[])
 {
-    if (argc != 16)
-    {
-        std::cerr << "Usage: " << argv[0]
-                  << " <q_file> <k_file> <v_file> "
-                  << "<B_c> <B_r> <grid_dim_x> <grid_dim_y> <grid_dim_z> <block_dim_x> <block_dim_y> <block_dim_z> "
-                  << " <o_file> <print o> <timing_runs> <warmup>"
-                  << std::endl;
+    // if (argc != 16)
+    // {
+    //     std::cerr << "Usage: " << argv[0]
+    //               << " <q_file> <k_file> <v_file> "
+    //               << "<B_c> <B_r> <grid_dim_x> <grid_dim_y> <grid_dim_z> <block_dim_x> <block_dim_y> <block_dim_z> "
+    //               << " <o_file> <print o> <timing_runs> <warmup>"
+    //               << std::endl;
 
-        std::cerr << "Has " << argc << "args" << std::endl;
-        return 1;
-    }
+    //     std::cerr << "Has " << argc << "args" << std::endl;
+    //     return 1;
+    // }
 
     const int num_runs = std::stoi(argv[1]);
     const int warmups = std::stoi(argv[2]);
@@ -188,6 +190,13 @@ int main(int argc, char *argv[])
     std::string k_file = argv[5];
     std::string v_file = argv[6];
     std::string o_file = argv[7];
+    std::cerr << "files\n\n\n";
+    for (int i = 4; i < 8; i++)
+    {
+        std::cerr << argv[i] << "\n";
+    }
+
+    // return;
 
     const int batch_size = std::stoi(argv[8]);
     const int num_heads = std::stoi(argv[9]);
@@ -200,21 +209,25 @@ int main(int argc, char *argv[])
 
     const int use_parallel = std::stoi(argv[15]);
 
+    std::cerr << "a\n";
     Matrix Q = readMatrixFromFile(q_file);
     Matrix K = readMatrixFromFile(k_file);
     Matrix V = readMatrixFromFile(v_file);
+    std::cerr << "b\n";
 
     Matrix O = Matrix(batch_size * num_heads * seq_len, emb_dim, 0);
     Matrix m = Matrix(batch_size * num_heads, seq_len, -(std::numeric_limits<float>::infinity()));
     Matrix l = Matrix(batch_size * num_heads, seq_len, 0);
+    std::cerr << "c\n";
 
     auto forward = (use_parallel ? forward_parallel : forward_serial);
 
     for (int i = 0; i < warmups; ++i)
     {
         reset(O, m, l);
-        forward(Q.data, K.data, V.data, O.data, m.data, l.data, B_c, B_r, batch_size, num_heads, seq_len, emb_dim);
+        forward(Q.data, K.data, V.data, O.data, m.data, l.data, B_c, B_r, batch_size, num_heads, seq_len, emb_dim, block_dim_y);
     }
+    std::cerr << "d\n";
 
     long long total_time = 0;
     for (int i = 0; i < num_runs; ++i)
@@ -222,15 +235,17 @@ int main(int argc, char *argv[])
         reset(O, m, l);
         std::cout << "timing" << std::endl;
         auto start = std::chrono::high_resolution_clock::now();
-        forward(Q.data, K.data, V.data, O.data, m.data, l.data, B_c, B_r, batch_size, num_heads, seq_len, emb_dim);
+        forward(Q.data, K.data, V.data, O.data, m.data, l.data, B_c, B_r, batch_size, num_heads, seq_len, emb_dim, block_dim_y);
         auto end = std::chrono::high_resolution_clock::now();
 
         total_time += std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
     }
+    std::cerr << "e\n";
 
     std::cout << static_cast<double>(total_time) / num_runs << std::endl;
 
     writeMatrixToFile(O, o_file);
+    std::cerr << "f\n";
 
     if (print_matrix)
         printMatrix(O);

@@ -1,10 +1,11 @@
 # from torch.utils.cpp_extension import load
 import torch
 import os
-import naive_attention
+from naive_attention import manual_attention
 import pandas as pd
 import subprocess
 import sys
+import numpy as np
 
 df = pd.read_csv("timings.csv")
 
@@ -14,22 +15,22 @@ df = pd.read_csv("timings.csv")
 def write_matrix(matrix, file_name):
     with open(file_name, "w") as file:
         for row in matrix:
-            file.write(" ".join(f"{x:.9f}" for x in row) + "\n")
+            file.write(" ".join(f"{x:.30f}" for x in row) + "\n")
     return matrix
 
 
 def create_random(batch_size, num_heads,seq_len, emb_dim, seed=0):
     np.random.seed(seed)
-    matrix = np.random.uniform(size=(batch_size, num_heads,seq_len, emb_dim))
-    return matrix.reshape((batch_size * num_heads * seq_len, emb_dim))
-    # return [[1.0,2.0],[3.0,4.0]]
+    # matrix = np.random.randn(batch_size, num_heads, seq_len, emb_dim)
+    # return matrix.reshape((batch_size * num_heads * seq_len, emb_dim))
+    return (np.random.randn(seq_len, emb_dim)[np.newaxis, np.newaxis, :, :]+ np.zeros((batch_size, num_heads, seq_len, emb_dim))).reshape((batch_size * num_heads * seq_len, emb_dim))
 
 
 def read_matrix(file_name, batch_size, num_heads,seq_len, emb_dim):
     return np.loadtxt(file_name, dtype=float).reshape(batch_size, num_heads,seq_len, emb_dim)
 
 
-def run_from_frame(df, row, warmups=2, repeats=2, print_o_matrix=False, check=False):
+def run_from_frame(df, row, warmups=3, repeats=2, print_o_matrix=False, check=False):
     row = df.iloc[row]
 
     batch_size, num_heads, seq_len, emb_dim = row["batch_size"], row["num_heads"], row["seq_len"], row["emb_dim"]
@@ -46,27 +47,37 @@ def run_from_frame(df, row, warmups=2, repeats=2, print_o_matrix=False, check=Fa
             "./build/attention",
             str(repeats),
             str(warmups),
-            if print_o_matrix "1" else "0",
+            "1" if print_o_matrix else "0",
             files["q_file"],
             files["k_file"],
             files["v_file"],
-            output_file,
-            batch_size,
-            num_heads,
-            seq_len,
-            emb_dim
+            str(output_file),
+            str(batch_size),
+            str(num_heads),
+            str(seq_len),
+            str(emb_dim),
             str(B_c),
             str(B_r),
             str(block_dim_y),
-            if row["use_parallel"] "1" else "0",
+            "1" if row["use_parallel"] else "0",
         ],
         capture_output=True,
         text=True,
     )
     
+    print(output_file, "done \n\n")
+    print(result)
+    print("after res\n")
+    
     if check:             
-        output = read_matrix(output_file, batch_size, num_heads,seq_len, emb_dim)
+        output = read_matrix(output_file, batch_size, num_heads, seq_len, emb_dim)
+        q_matrix = q_matrix.reshape(batch_size, num_heads, seq_len, emb_dim)
+        k_matrix = k_matrix.reshape(batch_size, num_heads, seq_len, emb_dim)
+        v_matrix = v_matrix.reshape(batch_size, num_heads, seq_len, emb_dim)
+                
         expected_output = manual_attention(q_matrix, k_matrix, v_matrix)
+        print(output.shape, expected_output.shape)
+        # print(expected_output)
         error = np.abs(expected_output - output)
 
         print("max error", error.max())
