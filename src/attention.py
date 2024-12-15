@@ -41,6 +41,8 @@ def run_from_frame(df, row, warmups=3, repeats=2, print_o_matrix=False, check=Fa
 
     B_c, B_r = row["B_c"], row["B_r"]
     block_dim_y = row["block_dim_y"]
+    
+    assert seq_len % B_r == 0 and emb_dim % B_c == 0, "Block size doesn't divide"
 
     result = subprocess.run(
         [
