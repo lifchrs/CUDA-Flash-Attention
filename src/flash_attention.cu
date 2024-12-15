@@ -286,15 +286,15 @@ __global__ void parallel_flash_attn_kernel(
             float new_m = max(prev_m, max_val);
             float new_l = prev_l * expf(prev_m - new_m) + sum * expf(max_val - new_m);
 
-            for (int h = 0; h < d; h++)
+            for (int k = 0; k < d; k++)
             {
                 float pv = 0.0f;
                 for (int k_idx = 0; k_idx < B_c; k_idx++)
                 {
-                    pv += S[tile_row_idx * B_c + k_idx] * V_j[k_idx * d + h];
+                    pv += S[tile_row_idx * B_c + k_idx] * V_j[k_idx * d + k];
                 }
 
-                const int out_idx = matrix_head_batch_offset + output_row_idx * d + h;
+                const int out_idx = matrix_head_batch_offset + output_row_idx * d + k;
 
                 O[out_idx] = (1.0f / new_l) * (prev_l * expf(prev_m - new_m) * O[out_idx] +
                                                expf(max_val - new_m) * pv);
@@ -327,7 +327,7 @@ void forward_parallel(
                                     cudaFuncAttributeMaxDynamicSharedMemorySize,
                                     98304));
     dim3 grid_dim(batch_size, num_heads);
-    dim3 block_dim(B_r); // #, block_dim_y);
+    dim3 block_dim(B_r, block_dim_y);
     // block_dim = dim3(B_r, 1);
 
     const int sram_size = (B_r * d + 2 * B_c * d + B_r * B_c) * sizeof(float);
