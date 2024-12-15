@@ -1,0 +1,2 @@
+batch_size,num_heads,seq_len,emb_dim,B_c,B_r,grid_dim_x,grid_dim_y,grid_dim_z,block_dim_x,block_dim_y,block_dim_z
+32,1,2048,32,128,32,32,1,1,128,1,1
