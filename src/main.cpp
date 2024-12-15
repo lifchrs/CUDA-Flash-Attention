@@ -8,7 +8,37 @@
 #include <chrono>
 #include <iomanip>
 
-extern void forward(float *Q, float *K, float *V, const int B_c, const int B_r, const int grid_dim_x, const int grid_dim_y, const int grid_dim_z, const int block_dim_x, const int block_dim_y, const int block_dim_z, const int N, const int d, const int T_c, const int T_r, float *O);
+extern void forward_serial(
+    float *Q,             // Query matrix
+    float *K,             // Key matrix
+    float *V,             // Value matrix
+    float *O,             // Output matrix
+    float *m,             // Running maximum values
+    float *l,             // Running sum of exponentials
+    const int B_c,        // Column block size
+    const int B_r,        // Row block size
+    const int batch_size, // Batch size
+    const int num_heads,  // Number of heads
+    const int seq_len,    // Sequence Length
+    const int d           // Hidden dimension
+);
+
+extern void forward_parallel(
+    float *Q,             // Query matrix
+    float *K,             // Key matrix
+    float *V,             // Value matrix
+    float *O,             // Output matrix
+    float *m,             // Running maximum values
+    float *l,             // Running sum of exponentials
+    const int B_c,        // Column block size
+    const int B_r,        // Row block size
+    const int batch_size, // Batch size
+    const int num_heads,  // Number of heads
+    const int seq_len,    // Sequence Length
+    const int d           // Hidden dimension
+);
+
+// extern void forward(float *Q, float *K, float *V, const int B_c, const int B_r, const int grid_dim_x, const int grid_dim_y, const int grid_dim_z, const int block_dim_x, const int block_dim_y, const int block_dim_z, const int N, const int d, const int T_c, const int T_r, float *O);
 
 struct Matrix
 {
@@ -93,7 +123,7 @@ void writeMatrixToFile(const Matrix &matrix, const std::string &fileName)
     {
         for (size_t j = 0; j < matrix.width; ++j)
         {
-            file   << std::setprecision(max_precision) << std::fixed << matrix.data[i * matrix.width + j];
+            file << std::setprecision(max_precision) << std::fixed << matrix.data[i * matrix.width + j];
             if (j < matrix.width - 1)
             {
                 file << " "; // Add space between elements in the same row
@@ -129,7 +159,8 @@ void setVal(Matrix &matrix, const float val)
     }
 }
 
-void reset(Matrix &O, Matrix &m, Matrix &l){
+void reset(Matrix &O, Matrix &m, Matrix &l)
+{
     setVal(O, 0);
     setVal(m, -(std::numeric_limits<float>::infinity()));
     setVal(l, 0);
@@ -149,66 +180,59 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    std::string q_file = argv[1];
+    const int num_runs = std::stoi(argv[1]);
+    const int warmups = std::stoi(argv[2]);
+    const int print_matrix = std::stoi(argv[3]);
+
+    std::string q_file = argv[4];
+    std::string k_file = argv[5];
+    std::string v_file = argv[6];
+    std::string o_file = argv[7];
+
+    const int batch_size = std::stoi(argv[8]);
+    const int num_heads = std::stoi(argv[9]);
+    const int seq_len = std::stoi(argv[10]);
+    const int emb_dim = std::stoi(argv[11]);
+
+    const int B_c = std::stoi(argv[12]);
+    const int B_r = std::stoi(argv[13]);
+    const int block_dim_y = std::stoi(argv[14]);
+
+    const int use_parallel = std::stoi(argv[15]);
+
     Matrix Q = readMatrixFromFile(q_file);
-    std::string k_file = argv[2];
     Matrix K = readMatrixFromFile(k_file);
-    std::string v_file = argv[3];
     Matrix V = readMatrixFromFile(v_file);
 
-    const int N = Q.height;
-    const int d = Q.width;
-        std::cerr<< "\n\n\n\n\n" <<  N << " " << d << " sizes\n\n";
+    Matrix O = Matrix(batch_size * num_heads * seq_len, emb_dim, 0);
+    Matrix m = Matrix(batch_size * num_heads, seq_len, -(std::numeric_limits<float>::infinity()));
+    Matrix l = Matrix(batch_size * num_heads, seq_len, 0);
 
-
-    Matrix O = Matrix(N, d, 0);
-    Matrix m = Matrix(1, N, -(std::numeric_limits<float>::infinity()));
-    Matrix l = Matrix(1, N, 0);
-
-    const int B_c = std::stoi(argv[4]);
-    const int B_r = std::stoi(argv[5]);
-
-    const int T_c = (N + B_c - 1) / B_c;
-    const int T_r = (N + B_r - 1) / B_r;
-
-    const int grid_dim_x = std::stoi(argv[6]);
-    const int grid_dim_y = std::stoi(argv[7]);
-    const int grid_dim_z = std::stoi(argv[8]);
-
-    const int block_dim_x = std::stoi(argv[9]);
-    const int block_dim_y = std::stoi(argv[10]);
-    const int block_dim_z = std::stoi(argv[11]);
-
-    const int n = std::stoi(argv[14]);
-    const int warmups = std::stoi(argv[15]);
+    auto forward = (use_parallel ? forward_parallel : forward_serial);
 
     for (int i = 0; i < warmups; ++i)
     {
         reset(O, m, l);
-        std::cout << "warmup" << std::endl;
-        forward(Q.data, K.data, V.data, B_c, B_r, grid_dim_x, grid_dim_y, grid_dim_z, block_dim_x, block_dim_y, block_dim_z, N, d, T_c, T_r, O.data, l.data, m.data);
-        
+        forward(Q.data, K.data, V.data, O.data, m.data, l.data, B_c, B_r, batch_size, num_heads, seq_len, emb_dim);
     }
 
     long long total_time = 0;
-    for (int i = 0; i < n; ++i)
+    for (int i = 0; i < num_runs; ++i)
     {
         reset(O, m, l);
         std::cout << "timing" << std::endl;
         auto start = std::chrono::high_resolution_clock::now();
-        forward(Q.data, K.data, V.data, B_c, B_r, grid_dim_x, grid_dim_y, grid_dim_z, block_dim_x, block_dim_y, block_dim_z, N, d, T_c, T_r, O.data, l.data, m.data);
+        forward(Q.data, K.data, V.data, O.data, m.data, l.data, B_c, B_r, batch_size, num_heads, seq_len, emb_dim);
         auto end = std::chrono::high_resolution_clock::now();
-        
 
         total_time += std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
     }
 
-    std::cout << static_cast<double>(total_time) / n << std::endl;
+    std::cout << static_cast<double>(total_time) / num_runs << std::endl;
 
-    std::string o_file = argv[12];
     writeMatrixToFile(O, o_file);
 
-    if (std::stoi(argv[13]))
+    if (print_matrix)
         printMatrix(O);
 
     return 0;

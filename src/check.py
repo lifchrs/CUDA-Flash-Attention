@@ -10,19 +10,14 @@ def write_matrix(matrix, file_name):
     return matrix
 
 
-def create_random(height, width, seed=0):
+def create_random(batch_size, num_heads,seq_len, emb_dim, seed=0):
     np.random.seed(seed)
-    matrix = np.random.uniform(size=(height, width))
+    matrix = np.random.uniform(size=(batch_size, num_heads,seq_len, emb_dim))
     return matrix
     # return [[1.0,2.0],[3.0,4.0]]
 
-def write_random(width, height, seed=0):
-    np.random.seed(seed)
-    matrix = np.random.uniform(size=(height, width))
-    write_matrix(matrix, f"{height}x{width}.txt")
 
-
-def read_matrix(file_name):
+def read_matrix(file_name, batch_size, num_heads,seq_len, emb_dim):
     return np.loadtxt(file_name, dtype=float)
 
 

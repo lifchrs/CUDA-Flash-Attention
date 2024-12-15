@@ -1,7 +1,6 @@
 # from torch.utils.cpp_extension import load
 import torch
 import os
-from check import *
 import naive_attention
 import pandas as pd
 import subprocess
@@ -12,66 +11,66 @@ df = pd.read_csv("timings.csv")
 # print(df)
 
 
-def run_from_frame(df, row, warmups=2, repeats=2, print_o_matrix=0, check=False):
+def write_matrix(matrix, file_name):
+    with open(file_name, "w") as file:
+        for row in matrix:
+            file.write(" ".join(f"{x:.9f}" for x in row) + "\n")
+    return matrix
+
+
+def create_random(batch_size, num_heads,seq_len, emb_dim, seed=0):
+    np.random.seed(seed)
+    matrix = np.random.uniform(size=(batch_size, num_heads,seq_len, emb_dim))
+    return matrix.reshape((batch_size * num_heads * seq_len, emb_dim))
+    # return [[1.0,2.0],[3.0,4.0]]
+
+
+def read_matrix(file_name, batch_size, num_heads,seq_len, emb_dim):
+    return np.loadtxt(file_name, dtype=float).reshape(batch_size, num_heads,seq_len, emb_dim)
+
+
+def run_from_frame(df, row, warmups=2, repeats=2, print_o_matrix=False, check=False):
     row = df.iloc[row]
 
-    # print("there is the row")
-    # print(row)
-
-    seq_len, emb_dim = row["seq_len"], row["emb_dim"]
+    batch_size, num_heads, seq_len, emb_dim = row["batch_size"], row["num_heads"], row["seq_len"], row["emb_dim"]
     
-    q_matrix = write_matrix(create_random(seq_len, emb_dim), files["q_file"])
-    k_matrix = write_matrix(create_random(seq_len, emb_dim), files["k_file"])
-    v_matrix = write_matrix(create_random(seq_len, emb_dim), files["v_file"])
+    q_matrix = write_matrix(create_random(batch_size, num_heads,seq_len, emb_dim), files["q_file"])
+    k_matrix = write_matrix(create_random(batch_size, num_heads,seq_len, emb_dim), files["k_file"])
+    v_matrix = write_matrix(create_random(batch_size, num_heads,seq_len, emb_dim), files["v_file"])
 
     B_c, B_r = row["B_c"], row["B_r"]
-    grid_dim_x, grid_dim_y, grid_dim_z = (
-        row["grid_dim_x"],
-        row["grid_dim_y"],
-        row["grid_dim_z"],
-    )
-    block_dim_x, block_dim_y, block_dim_z = (
-        row["block_dim_x"],
-        row["block_dim_y"],
-        row["block_dim_y"],
-    )
+    block_dim_y = row["block_dim_y"]
 
     result = subprocess.run(
         [
             "./build/attention",
+            str(repeats),
+            str(warmups),
+            if print_o_matrix "1" else "0",
             files["q_file"],
             files["k_file"],
             files["v_file"],
+            output_file,
+            batch_size,
+            num_heads,
+            seq_len,
+            emb_dim
             str(B_c),
             str(B_r),
-            str(grid_dim_x),
-            str(grid_dim_y),
-            str(grid_dim_z),
-            str(block_dim_x),
             str(block_dim_y),
-            str(block_dim_z),
-            output_file,
-            str(print_o_matrix),
-            str(repeats),
-            str(warmups),
+            if row["use_parallel"] "1" else "0",
         ],
         capture_output=True,
         text=True,
     )
-
-    print(result)
     
     if check:             
-        output = read_matrix(output_file)
-        expected_output = torch.nn.functional.scaled_dot_product_attention(
-            torch.tensor(q_matrix),
-            torch.tensor(k_matrix),
-            torch.tensor(v_matrix)
-        )
+        output = read_matrix(output_file, batch_size, num_heads,seq_len, emb_dim)
+        expected_output = manual_attention(q_matrix, k_matrix, v_matrix)
         error = np.abs(expected_output - output)
 
-        print("max error", error.max().item())
-        print("mean error", error.mean().item())
+        print("max error", error.max())
+        print("mean error", error.mean())
     return result.stdout
 
 
@@ -83,9 +82,6 @@ files = {
 output_file = "output.txt"
 run_from_frame(df, 0, check=True)
 
-
-
-# sys.exit()
 
 # N = 32*4
 # d = 100

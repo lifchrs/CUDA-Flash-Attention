@@ -9,7 +9,7 @@ def manual_attention(query, key, value):
     key = torch.Tensor(key)
     value = torch.Tensor(value)
     scaling_factor = 1.0 / math.sqrt(key.size(-1))
-    attention_scores = query @ key.T * scaling_factor
+    attention_scores = query @ np.transpose(key, axes=(0, 1, 3, 2)) * scaling_factor
     attention_probs = F.softmax(attention_scores, dim=-1)
     attention_output = attention_probs @ value
 
