@@ -20,7 +20,7 @@ def write_matrix(matrix, file_name):
 
 
 def create_random(batch_size, num_heads,seq_len, emb_dim, seed=0):
-    np.random.seed(seed)
+    # np.random.seed(seed)
     matrix = np.random.randn(batch_size, num_heads, seq_len, emb_dim)
     return matrix.reshape((batch_size * num_heads * seq_len, emb_dim))
     # return (np.random.randn(seq_len, emb_dim)[np.newaxis, np.newaxis, :, :]+ np.zeros((batch_size, num_heads, seq_len, emb_dim))).reshape((batch_size * num_heads * seq_len, emb_dim))
@@ -31,6 +31,7 @@ def read_matrix(file_name, batch_size, num_heads,seq_len, emb_dim):
 
 
 def run_from_frame(df, row, warmups=3, repeats=2, print_o_matrix=False, check=False):
+    os.system(f"echo \"\" > {output_file}")
     row = df.iloc[row]
 
     batch_size, num_heads, seq_len, emb_dim = row["batch_size"], row["num_heads"], row["seq_len"], row["emb_dim"]
@@ -43,6 +44,7 @@ def run_from_frame(df, row, warmups=3, repeats=2, print_o_matrix=False, check=Fa
     block_dim_y = row["block_dim_y"]
     
     assert seq_len % B_r == 0 and emb_dim % B_c == 0, "Block size doesn't divide"
+    assert B_r * block_dim_y <= 1024, "Block must have <= 1024 threads"
 
     result = subprocess.run(
         [
@@ -84,7 +86,7 @@ def run_from_frame(df, row, warmups=3, repeats=2, print_o_matrix=False, check=Fa
 
         print("max error", error.max())
         print("mean error", error.mean())
-    return result.stdout
+    return (result.stdout, error.max(), error.mean())
 
 
 files = {
@@ -93,7 +95,18 @@ files = {
     "v_file": "v_matrix.txt",
 }
 output_file = "output.txt"
-run_from_frame(df, 0, check=True)
+
+overall_max = -1
+overall_sum = 0
+for row in range(len(df)):
+    _, max_error, mean_error = run_from_frame(df, row, check=True)
+    overall_sum += mean_error
+    overall_max = max(max_error, overall_max)
+
+print("overall max", overall_max)
+print("overall mean", overall_sum/len(df))
+    
+    
 
 
 # N = 32*4

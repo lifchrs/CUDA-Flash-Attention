@@ -233,7 +233,8 @@ __global__ void parallel_flash_attn_kernel(
 
     for (int j = 0; j < T_c; j++)
     {
-        for (int k_idx = 0; k_idx < B_c; k_idx++)
+
+        for (int k_idx = threadIdx.x + threadIdx.y * B_r; k_idx < B_c; k_idx += B_r) // Can be parallelized
         {
             for (int h = 0; h < d; h++)
             {
@@ -242,75 +243,76 @@ __global__ void parallel_flash_attn_kernel(
             }
         }
 
-        for (int i = 0; i < T_r; i++)
+        // threads needs to be synchronized within block since
+        // each thread multiplies a row of Q with a tile of K and V
+        // and we need to make sure that the tiles of K and V have been computed
+        __syncthreads();
+        // printf("%d %d %d %d \n", threadIdx.x, threadIdx.y, T_r, B_r);
+        // for (int i = 0 * threadIdx.y; i < T_r && threadIdx.y == 0; i += 1 + 0 * blockDim.y)
+        for (int i = threadIdx.y; i < T_r; i += blockDim.y)
         {
-            for (int q_idx = 0; q_idx < B_r; q_idx++)
-            {
-                for (int h = 0; h < d; h++)
-                {
-                    Q_i[q_idx * d + h] = Q[matrix_head_batch_offset + i * B_r * d + q_idx * d + h];
-                }
-            }
+            // int sum2 = 0;
 
-            for (int q_idx = 0; q_idx < B_r; q_idx++)
-            {
-                for (int k_idx = 0; k_idx < B_c; k_idx++)
-                {
-                    float score = 0.0f;
-                    for (int h = 0; h < d; h++)
-                    {
-                        score += Q_i[q_idx * d + h] * K_j[k_idx * d + h];
-                    }
-                    S[q_idx * B_c + k_idx] = score * scale;
-                }
-            }
-
-            // for (int ch = 0; ch < B_r * B_c; ch++)
+            // if (threadIdx.x == 0)
             // {
-            //     printf("%d ", S[ch]);
+            //     for (int m = 0; m <= 1 << 3; m++)
+            //     {
+            //         printf("test");
+            //         sum2 += m;
+            //     }
             // }
-            // printf("\n\n\n\n");
+            // printf("%d %d %d \n", threadIdx.x, threadIdx.y, blockDim.y);
+            const int tile_row_idx = threadIdx.x;
 
-            for (int q_idx = 0; q_idx < B_r; q_idx++)
+            for (int h = 0; h < d; h++)
             {
-                float max_val = S[q_idx * B_c];
-                for (int k_idx = 1; k_idx < B_c; k_idx++)
-                {
-                    max_val = max(max_val, S[q_idx * B_c + k_idx]);
-                }
-
-                float sum = 0.0f;
-                for (int k_idx = 0; k_idx < B_c; k_idx++)
-                {
-                    S[q_idx * B_c + k_idx] = expf(S[q_idx * B_c + k_idx] - max_val);
-                    sum += S[q_idx * B_c + k_idx];
-                }
-
-                const int row_idx = i * B_r + q_idx;
-                float prev_m = m[vector_head_batch_offset + row_idx];
-                float prev_l = l[vector_head_batch_offset + row_idx];
-                float new_m = max(prev_m, max_val);
-                float new_l = prev_l * expf(prev_m - new_m) + sum * expf(max_val - new_m);
-
+                Q_i[tile_row_idx * d + h] = Q[matrix_head_batch_offset + i * B_r * d + tile_row_idx * d + h];
+            }
+            for (int k_idx = 0; k_idx < B_c; k_idx++)
+            {
+                float score = 0.0f;
                 for (int h = 0; h < d; h++)
                 {
-                    float pv = 0.0f; // P_ij * V_j
-                    for (int k_idx = 0; k_idx < B_c; k_idx++)
-                    {
-                        pv += S[q_idx * B_c + k_idx] * V_j[k_idx * d + h];
-                    }
+                    score += Q_i[tile_row_idx * d + h] * K_j[k_idx * d + h];
+                }
+                S[tile_row_idx * B_c + k_idx] = score * scale;
+            }
+            float max_val = S[tile_row_idx * B_c];
+            for (int k_idx = 1; k_idx < B_c; k_idx++)
+            {
+                max_val = max(max_val, S[tile_row_idx * B_c + k_idx]);
+            }
 
-                    const int out_idx = matrix_head_batch_offset + row_idx * d + h;
+            float sum = 0.0f;
+            for (int k_idx = 0; k_idx < B_c; k_idx++)
+            {
+                S[tile_row_idx * B_c + k_idx] = expf(S[tile_row_idx * B_c + k_idx] - max_val);
+                sum += S[tile_row_idx * B_c + k_idx];
+            }
 
-                    // fprintf(stderr, "out ind %d \n", out_idx);
-                    O[out_idx] = (1.0f / new_l) * (prev_l * expf(prev_m - new_m) * O[out_idx] +
-                                                   expf(max_val - new_m) * pv);
-                    // fprintf(stderr, "O[%d] = %f\n", out_idx, O[out_idx]);
+            const int output_row_idx = i * B_r + tile_row_idx;
+            float prev_m = m[vector_head_batch_offset + output_row_idx];
+            float prev_l = l[vector_head_batch_offset + output_row_idx];
+            float new_m = max(prev_m, max_val);
+            float new_l = prev_l * expf(prev_m - new_m) + sum * expf(max_val - new_m);
+
+            for (int h = 0; h < d; h++)
+            {
+                float pv = 0.0f;
+                for (int k_idx = 0; k_idx < B_c; k_idx++)
+                {
+                    pv += S[tile_row_idx * B_c + k_idx] * V_j[k_idx * d + h];
                 }
 
-                m[vector_head_batch_offset + row_idx] = new_m;
-                l[vector_head_batch_offset + row_idx] = new_l;
+                const int out_idx = matrix_head_batch_offset + output_row_idx * d + h;
+
+                O[out_idx] = (1.0f / new_l) * (prev_l * expf(prev_m - new_m) * O[out_idx] +
+                                               expf(max_val - new_m) * pv);
             }
+
+            m[vector_head_batch_offset + output_row_idx] = new_m;
+            l[vector_head_batch_offset + output_row_idx] = new_l;
+            __syncthreads();
         }
     }
 }
@@ -335,8 +337,7 @@ void forward_parallel(
                                     cudaFuncAttributeMaxDynamicSharedMemorySize,
                                     98304));
     dim3 grid_dim(batch_size, num_heads);
-    // dim3 grid_dim(1, 1);
-    dim3 block_dim(1, 1);
+    dim3 block_dim(B_r, block_dim_y);
 
     const int sram_size = (B_r * d + 2 * B_c * d + B_r * B_c) * sizeof(float);
     const int matrix_size = batch_size * num_heads * seq_len * d * sizeof(float);
