@@ -81,6 +81,8 @@ Matrix readMatrixFromFile(const std::string &fileName)
 
 void writeMatrixToFile(const Matrix &matrix, const std::string &fileName)
 {
+    const int max_precision = std::numeric_limits<float>::max_digits10;
+
     std::ofstream file(fileName);
     if (!file.is_open())
     {
@@ -91,7 +93,7 @@ void writeMatrixToFile(const Matrix &matrix, const std::string &fileName)
     {
         for (size_t j = 0; j < matrix.width; ++j)
         {
-            file << matrix.data[i * matrix.width + j];
+            file   << std::setprecision(max_precision) << std::fixed << matrix.data[i * matrix.width + j];
             if (j < matrix.width - 1)
             {
                 file << " "; // Add space between elements in the same row
@@ -122,9 +124,15 @@ void setVal(Matrix &matrix, const float val)
     {
         for (int j = 0; j < matrix.width; ++j)
         {
-            matrix.data[i * matrix.height + j] = val;
+            matrix.data[i * matrix.width + j] = val;
         }
     }
+}
+
+void reset(Matrix &O, Matrix &m, Matrix &l){
+    setVal(O, 0);
+    setVal(m, -(std::numeric_limits<float>::infinity()));
+    setVal(l, 0);
 }
 
 int main(int argc, char *argv[])
@@ -150,6 +158,8 @@ int main(int argc, char *argv[])
 
     const int N = Q.height;
     const int d = Q.width;
+        std::cerr<< "\n\n\n\n\n" <<  N << " " << d << " sizes\n\n";
+
 
     Matrix O = Matrix(N, d, 0);
     Matrix m = Matrix(1, N, -(std::numeric_limits<float>::infinity()));
@@ -174,19 +184,21 @@ int main(int argc, char *argv[])
 
     for (int i = 0; i < warmups; ++i)
     {
+        reset(O, m, l);
         std::cout << "warmup" << std::endl;
         forward(Q.data, K.data, V.data, B_c, B_r, grid_dim_x, grid_dim_y, grid_dim_z, block_dim_x, block_dim_y, block_dim_z, N, d, T_c, T_r, O.data, l.data, m.data);
-        setVal(O, 0);
+        
     }
 
     long long total_time = 0;
     for (int i = 0; i < n; ++i)
     {
+        reset(O, m, l);
         std::cout << "timing" << std::endl;
         auto start = std::chrono::high_resolution_clock::now();
         forward(Q.data, K.data, V.data, B_c, B_r, grid_dim_x, grid_dim_y, grid_dim_z, block_dim_x, block_dim_y, block_dim_z, N, d, T_c, T_r, O.data, l.data, m.data);
         auto end = std::chrono::high_resolution_clock::now();
-        setVal(O, 0);
+        
 
         total_time += std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
     }

@@ -8,7 +8,7 @@ BUILD_DIR = build
 INCLUDE_DIR = include
 
 # Flags
-NVCCFLAGS = -O3 -arch=sm_60  # Adjust the architecture based on your GPU
+NVCCFLAGS = -O3 -arch=sm_80
 CXXFLAGS = -O3 -std=c++11
 
 # Include directories

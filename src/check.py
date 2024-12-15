@@ -10,11 +10,11 @@ def write_matrix(matrix, file_name):
     return matrix
 
 
-def create_random(width, height, seed=0):
+def create_random(height, width, seed=0):
     np.random.seed(seed)
     matrix = np.random.uniform(size=(height, width))
     return matrix
-    # return [[1,2],[3,4]]
+    # return [[1.0,2.0],[3.0,4.0]]
 
 def write_random(width, height, seed=0):
     np.random.seed(seed)
