@@ -105,7 +105,7 @@ void serial_flash_attn_kernel(
     }
 }
 
-void forward(
+void forward_serial(
     float* Q_h, float* K_h, float* V_h,
     const int B_c, const int B_r,
     const int grid_dim_x, const int grid_dim_y, const int grid_dim_z,
@@ -115,6 +115,9 @@ void forward(
     float* O_h, float* l_h, float* m_h
 )
 {
+    CUDA_CHECK(cudaFuncSetAttribute(serial_flash_attn_kernel, 
+    cudaFuncAttributeMaxDynamicSharedMemorySize, 
+    98304));    
     dim3 grid_dim(grid_dim_x, grid_dim_y, grid_dim_z);
     dim3 block_dim(block_dim_x, block_dim_y, block_dim_z);
 
@@ -135,7 +138,7 @@ void forward(
     cudaMemcpy(O_d, O_h, matrix_size, cudaMemcpyHostToDevice);
     cudaMemcpy(l_d, l_h, vector_size, cudaMemcpyHostToDevice);
     cudaMemcpy(m_d, m_h, vector_size, cudaMemcpyHostToDevice);
-    fprintf(stderr, "shared memory: %d bytes\n", sram_size);
+    // fprintf(stderr, "shared memory: %d bytes\n", sram_size);
     serial_flash_attn_kernel<<<grid_dim, block_dim, sram_size>>>(
         N, d, Q_d, K_d, V_d, B_c, B_r, T_c, T_r, O_d, l_d, m_d
     );
@@ -150,9 +153,9 @@ void forward(
     cudaMemcpy(m_h, m_d, vector_size, cudaMemcpyDeviceToHost);
     
     // Free device memory
-    cudaFree(Q_d);
     cudaFree(K_d);
     cudaFree(V_d);
+    cudaFree(Q_d);
     cudaFree(O_d);
     cudaFree(l_d);
     cudaFree(m_d);
