@@ -109,15 +109,15 @@ __global__ void serial_flash_attn_kernel(
                         float new_m = max(prev_m, max_val);
                         float new_l = prev_l * expf(prev_m - new_m) + sum * expf(max_val - new_m);
 
-                        for (int h = 0; h < d; h++)
+                        for (int k = 0; k < d; k++)
                         {
                             float pv = 0.0f; // P_ij * V_j
                             for (int k_idx = 0; k_idx < B_c; k_idx++)
                             {
-                                pv += S[q_idx * B_c + k_idx] * V_j[k_idx * d + h];
+                                pv += S[q_idx * B_c + k_idx] * V_j[k_idx * d + k];
                             }
 
-                            const int out_idx = matrix_head_batch_offset + row_idx * d + h;
+                            const int out_idx = matrix_head_batch_offset + row_idx * d + k;
 
                             // fprintf(stderr, "out ind %d \n", out_idx);
                             O[out_idx] = (1.0f / new_l) * (prev_l * expf(prev_m - new_m) * O[out_idx] +
@@ -215,10 +215,8 @@ __global__ void parallel_flash_attn_kernel(
     float *m              // max values for stability
 )
 {
-    // printf("|| %d %d %d %d %d %d||", threadIdx.x, threadIdx.y, threadIdx.z, blockIdx.x, blockIdx.y, blockIdx.z);
     const float scale = 1.0f / sqrt(static_cast<float>(d));
 
-    // Correct shared memory allocation
     extern __shared__ float sram[];
     matrix Q_i = sram;                       // Query tile: B_r × d
     matrix K_j = &sram[B_r * d];             // Key tile: B_c × d
@@ -248,9 +246,7 @@ __global__ void parallel_flash_attn_kernel(
         // and we need to make sure that the tiles of K and V are in sram
         __syncthreads();
 
-        // printf("%d %d %d %d \n", threadIdx.x, threadIdx.y, T_r, B_r);
         for (int i = 0; i < T_r; i++)
-        // for (int i = 0; i < T_r; i ++)
         {
             const int tile_row_idx = threadIdx.x;
 
@@ -323,11 +319,11 @@ void forward_parallel(
     const int block_dim_y // Inversely proportional to how many tiles a thread attends to
 )
 {
-    CUDA_CHECK(cudaFuncSetAttribute(serial_flash_attn_kernel,
+    CUDA_CHECK(cudaFuncSetAttribute(parallel_flash_attn_kernel,
                                     cudaFuncAttributeMaxDynamicSharedMemorySize,
                                     98304));
     dim3 grid_dim(batch_size, num_heads);
-    dim3 block_dim(B_r, block_dim_y);
+    dim3 block_dim(B_r);
     // block_dim = dim3(B_r, 1);
 
     const int sram_size = (B_r * d + 2 * B_c * d + B_r * B_c) * sizeof(float);
@@ -350,7 +346,7 @@ void forward_parallel(
     cudaMemcpy(O_d, O_h, matrix_size, cudaMemcpyHostToDevice);
     cudaMemcpy(l_d, l_h, vector_size, cudaMemcpyHostToDevice);
     cudaMemcpy(m_d, m_h, vector_size, cudaMemcpyHostToDevice);
-    // fprintf(stderr, "shared memory: %d bytes\n", sram_size);
+    fprintf(stderr, "shared memory: %d bytes\n", sram_size);
     parallel_flash_attn_kernel<<<grid_dim, block_dim, sram_size>>>(
         batch_size, num_heads, seq_len, d, Q_d, K_d, V_d, B_c, B_r, T_c, T_r, O_d, l_d, m_d);
 
