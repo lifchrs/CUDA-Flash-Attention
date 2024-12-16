@@ -6,11 +6,6 @@ import subprocess
 import sys
 import numpy as np
 
-df = pd.read_csv("timings.csv")
-
-# print(df)
-
-
 def write_matrix(matrix, file_name):
     with open(file_name, "w") as file:
         for row in matrix:
@@ -29,7 +24,7 @@ def read_matrix(file_name, batch_size, num_heads,seq_len, emb_dim):
     return np.loadtxt(file_name, dtype=float).reshape(batch_size, num_heads,seq_len, emb_dim)
 
 
-def run_from_frame(df, row, warmups=3, repeats=2, check=False):
+def run_from_frame(df, row, warmups=1, repeats=2, check=False):
     row = df.iloc[row]
 
     batch_size, num_heads, seq_len, emb_dim = row["batch_size"], row["num_heads"], row["seq_len"], row["emb_dim"]
@@ -42,8 +37,12 @@ def run_from_frame(df, row, warmups=3, repeats=2, check=False):
     B_c, B_r = row["B_c"], row["B_r"]
     block_dim_y = row["block_dim_y"]
     
-    assert seq_len % B_r == 0 and emb_dim % B_c == 0, "Block size doesn't divide"
-    assert (B_r * emb_dim + 2 * B_c * emb_dim + B_r * B_c) * 4 <= 98304, "Using too much shmem"
+    if not(seq_len % B_r == 0 and emb_dim % B_c == 0):
+        print("Block size doesn't divide")
+        return -1
+    if not((B_r * emb_dim + 2 * B_c * emb_dim + B_r * B_c) * 4 <= 98304):
+        print("Using too much shmem")
+        return -2
 
     result = subprocess.run(
         [
@@ -84,9 +83,17 @@ def run_from_frame(df, row, warmups=3, repeats=2, check=False):
         print("max error", error.max())
         print("mean error", error.mean())
         return result.stdout, error.max(), error.mean()
+    
+    if result.stdout:
+        return float(result.stdout)/1_000_000
+    else:
+        return -3
 
-    return result.stdout
-
+# timing_csv_names = ["timing_csvs/emb_dim.csv"]
+timing_csv_names = ["timing_csvs/B_c_scaling.csv","timing_csvs/B_r_scaling.csv",
+                    "timing_csvs/batch_size.csv", "timing_csvs/block_dim_y.csv",
+                    "timing_csvs/emb_dim.csv","timing_csvs/num_heads.csv",
+                    "timing_csvs/parallel_vs_serial_timing.csv", "timing_csvs/seq_length.csv"]
 
 files = {
     "q_file": "q_matrix.txt",
@@ -94,13 +101,17 @@ files = {
     "v_file": "v_matrix.txt",
 }
 output_file = "output.txt"
+check = False
 
+for file_name in timing_csv_names:
+    df = pd.read_csv(file_name)
 
-global_max_error = 0
-
-for row in range(len(df)):
-    _, error_max, error_mean = run_from_frame(df, row, check=True)
-    global_max_error = max(global_max_error, error_max)
-
-print(global_max_error)
-# print(run_from_frame(df, 0, check=False))
+    if check:
+        global_max_error = 0
+        for row in range(len(df)):
+            time, error_max, error_mean = run_from_frame(df, row, check=True)
+            global_max_error = max(global_max_error, error_max)
+        print(global_max_error)
+    else:
+        df["Time"] = df.index.to_series().apply(lambda row: run_from_frame(df, row))
+        df.to_csv(file_name,index=False)
