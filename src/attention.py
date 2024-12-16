@@ -29,7 +29,7 @@ def read_matrix(file_name, batch_size, num_heads,seq_len, emb_dim):
     return np.loadtxt(file_name, dtype=float).reshape(batch_size, num_heads,seq_len, emb_dim)
 
 
-def run_from_frame(df, row, warmups=3, repeats=2, print_o_matrix=False, check=False):
+def run_from_frame(df, row, warmups=3, repeats=2, check=False):
     row = df.iloc[row]
 
     batch_size, num_heads, seq_len, emb_dim = row["batch_size"], row["num_heads"], row["seq_len"], row["emb_dim"]
@@ -50,7 +50,7 @@ def run_from_frame(df, row, warmups=3, repeats=2, print_o_matrix=False, check=Fa
             "./build/attention",
             str(repeats),
             str(warmups),
-            "1" if print_o_matrix else "0",
+            "1" if check else "0",
             files["q_file"] if check else "none",
             files["k_file"] if check else "none",
             files["v_file"] if check else "none",
@@ -83,6 +83,7 @@ def run_from_frame(df, row, warmups=3, repeats=2, print_o_matrix=False, check=Fa
 
         print("max error", error.max())
         print("mean error", error.mean())
+        return result.stdout, error.max(), error.mean()
 
     return result.stdout
 
@@ -93,5 +94,13 @@ files = {
     "v_file": "v_matrix.txt",
 }
 output_file = "output.txt"
-# run_from_frame(df, 0, check=True)
-print(run_from_frame(df, 0, check=False))
+
+
+global_max_error = 0
+
+for row in range(len(df)):
+    _, error_max, error_mean = run_from_frame(df, row, check=True)
+    global_max_error = max(global_max_error, error_max)
+
+print(global_max_error)
+# print(run_from_frame(df, 0, check=False))

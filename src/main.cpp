@@ -232,16 +232,13 @@ int main(int argc, char *argv[])
 
     const int use_parallel = std::stoi(argv[15]);
 
-    Matrix Q = generate_gaussian_matrix(batch_size * num_heads * seq_len, emb_dim);
-    Matrix K = generate_gaussian_matrix(batch_size * num_heads * seq_len, emb_dim);
-    Matrix V = generate_gaussian_matrix(batch_size * num_heads * seq_len, emb_dim);
+    // Matrix Q = generate_gaussian_matrix(batch_size * num_heads * seq_len, emb_dim);
+    // Matrix K = generate_gaussian_matrix(batch_size * num_heads * seq_len, emb_dim);
+    // Matrix V = generate_gaussian_matrix(batch_size * num_heads * seq_len, emb_dim);
 
-    if (q_file != "none")
-    {
-        Q = readMatrixFromFile(q_file);
-        K = readMatrixFromFile(k_file);
-        V = readMatrixFromFile(v_file);
-    }
+    Matrix Q = q_file == "none" ? generate_gaussian_matrix(batch_size * num_heads * seq_len, emb_dim) : readMatrixFromFile(q_file);
+    Matrix K = k_file == "none" ? generate_gaussian_matrix(batch_size * num_heads * seq_len, emb_dim) : readMatrixFromFile(k_file);
+    Matrix V = v_file == "none" ? generate_gaussian_matrix(batch_size * num_heads * seq_len, emb_dim) : readMatrixFromFile(v_file);
 
     Matrix O = Matrix(batch_size * num_heads * seq_len, emb_dim, 0);
     Matrix m = Matrix(batch_size * num_heads, seq_len, -(std::numeric_limits<float>::infinity()));
