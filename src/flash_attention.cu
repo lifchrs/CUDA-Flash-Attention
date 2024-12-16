@@ -246,60 +246,61 @@ __global__ void parallel_flash_attn_kernel(
         // and we need to make sure that the tiles of K and V are in sram
         __syncthreads();
 
-        for (int i = 0; i < T_r; i++)
-        {
-            const int tile_row_idx = threadIdx.x;
+        int i = blockIdx.z;
+        // for (int i = 0; i < T_r; i++)
+        // {
+        const int tile_row_idx = threadIdx.x;
 
+        for (int h = 0; h < d; h++)
+        {
+            Q_i[tile_row_idx * d + h] = Q[matrix_head_batch_offset + i * B_r * d + tile_row_idx * d + h];
+        }
+        for (int k_idx = 0; k_idx < B_c; k_idx++)
+        {
+            float score = 0.0f;
             for (int h = 0; h < d; h++)
             {
-                Q_i[tile_row_idx * d + h] = Q[matrix_head_batch_offset + i * B_r * d + tile_row_idx * d + h];
+                score += Q_i[tile_row_idx * d + h] * K_j[k_idx * d + h];
             }
-            for (int k_idx = 0; k_idx < B_c; k_idx++)
-            {
-                float score = 0.0f;
-                for (int h = 0; h < d; h++)
-                {
-                    score += Q_i[tile_row_idx * d + h] * K_j[k_idx * d + h];
-                }
-                S[tile_row_idx * B_c + k_idx] = score * scale;
-            }
-            float max_val = S[tile_row_idx * B_c];
-            for (int k_idx = 1; k_idx < B_c; k_idx++)
-            {
-                max_val = max(max_val, S[tile_row_idx * B_c + k_idx]);
-            }
-
-            float sum = 0.0f;
-            for (int k_idx = 0; k_idx < B_c; k_idx++)
-            {
-                S[tile_row_idx * B_c + k_idx] = expf(S[tile_row_idx * B_c + k_idx] - max_val);
-                sum += S[tile_row_idx * B_c + k_idx];
-            }
-
-            const int output_row_idx = i * B_r + tile_row_idx;
-            float prev_m = m[vector_head_batch_offset + output_row_idx];
-            float prev_l = l[vector_head_batch_offset + output_row_idx];
-            float new_m = max(prev_m, max_val);
-            float new_l = prev_l * expf(prev_m - new_m) + sum * expf(max_val - new_m);
-
-            for (int k = 0; k < d; k++)
-            {
-                float pv = 0.0f;
-                for (int k_idx = 0; k_idx < B_c; k_idx++)
-                {
-                    pv += S[tile_row_idx * B_c + k_idx] * V_j[k_idx * d + k];
-                }
-
-                const int out_idx = matrix_head_batch_offset + output_row_idx * d + k;
-
-                O[out_idx] = (1.0f / new_l) * (prev_l * expf(prev_m - new_m) * O[out_idx] +
-                                               expf(max_val - new_m) * pv);
-            }
-
-            m[vector_head_batch_offset + output_row_idx] = new_m;
-            l[vector_head_batch_offset + output_row_idx] = new_l;
-            // __syncthreads();
+            S[tile_row_idx * B_c + k_idx] = score * scale;
         }
+        float max_val = S[tile_row_idx * B_c];
+        for (int k_idx = 1; k_idx < B_c; k_idx++)
+        {
+            max_val = max(max_val, S[tile_row_idx * B_c + k_idx]);
+        }
+
+        float sum = 0.0f;
+        for (int k_idx = 0; k_idx < B_c; k_idx++)
+        {
+            S[tile_row_idx * B_c + k_idx] = expf(S[tile_row_idx * B_c + k_idx] - max_val);
+            sum += S[tile_row_idx * B_c + k_idx];
+        }
+
+        const int output_row_idx = i * B_r + tile_row_idx;
+        float prev_m = m[vector_head_batch_offset + output_row_idx];
+        float prev_l = l[vector_head_batch_offset + output_row_idx];
+        float new_m = max(prev_m, max_val);
+        float new_l = prev_l * expf(prev_m - new_m) + sum * expf(max_val - new_m);
+
+        for (int k = 0; k < d; k++)
+        {
+            float pv = 0.0f;
+            for (int k_idx = 0; k_idx < B_c; k_idx++)
+            {
+                pv += S[tile_row_idx * B_c + k_idx] * V_j[k_idx * d + k];
+            }
+
+            const int out_idx = matrix_head_batch_offset + output_row_idx * d + k;
+
+            O[out_idx] = (1.0f / new_l) * (prev_l * expf(prev_m - new_m) * O[out_idx] +
+                                           expf(max_val - new_m) * pv);
+        }
+
+        m[vector_head_batch_offset + output_row_idx] = new_m;
+        l[vector_head_batch_offset + output_row_idx] = new_l;
+        // __syncthreads();
+        // }
     }
 }
 
@@ -322,8 +323,6 @@ void forward_parallel(
     CUDA_CHECK(cudaFuncSetAttribute(parallel_flash_attn_kernel,
                                     cudaFuncAttributeMaxDynamicSharedMemorySize,
                                     98304));
-    dim3 grid_dim(batch_size, num_heads);
-    dim3 block_dim(B_r);
     // block_dim = dim3(B_r, 1);
 
     const int sram_size = (B_r * d + 2 * B_c * d + B_r * B_c) * sizeof(float);
@@ -347,6 +346,10 @@ void forward_parallel(
     cudaMemcpy(l_d, l_h, vector_size, cudaMemcpyHostToDevice);
     cudaMemcpy(m_d, m_h, vector_size, cudaMemcpyHostToDevice);
     fprintf(stderr, "shared memory: %d bytes\n", sram_size);
+
+    dim3 grid_dim(batch_size, num_heads, T_r);
+    dim3 block_dim(B_r);
+
     parallel_flash_attn_kernel<<<grid_dim, block_dim, sram_size>>>(
         batch_size, num_heads, seq_len, d, Q_d, K_d, V_d, B_c, B_r, T_c, T_r, O_d, l_d, m_d);
 
