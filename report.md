@@ -12,7 +12,11 @@ In order to implement this algorithm in CUDA, we exploited the embarrassing para
 ## Scaling results
 
 ### Block scaling
-![Block Size Varying Plot](timing_plots/grid_B_c.png)
+![Block Size Varying Plot](timing_plots_before_qi/grid_B_r.png)
+
+The reason that $B_r$ eventually trends up seems to be cache effects because the l2 throughput doubles from the $128\times 16$ to the $256\times 8$, the issue is that the regesters per thread decrases (since the blocks have more threads) and it seems that there are fewer blocks allocated per SM (since the number of waves per SM is higher).
+
+
 This graph shows the effect of changing the block size on the speed of Flash Attention. $B_r$ is the height of the block (and the axis where we parelelize) and $B_c$ is the width of the block which obviously effects the total size of the block as well as the SRAM utilization. You can see that as $B_r$ increases the implementation gets strictly faster, this makes sense as the profiler results suggest that we are compute bound and have relatively low thread utilization, thus spawning more threads to do work on the blocks speed up the computation. In contrast, there is a sweet spot for $B_c$. We would expect larger $B_c$ to perform better until SRAM has been fully utilized, this is because there is a roughly fixed cost to moving data from HBM to SRAM. As SRAM is quite small, moving data to it is dominated more by latency than throughput, therefore we would expect having more SRAM utilization to be strictly better as it reduces the total number of HBM accesses without trading the total number of computations. However, we don't see this. We hypothesize the reason is that because of our naive matrix multiplication, when SRAM is full, the matrix multiply becomes slower because of cache effects, essentially we belive that higher levels of cache than SRAM are being poorly utilized because of our matrix multiply algorithm. 
 
 We see that when $B_r$ becomes a multiple of 32, that the improvements level off, probably because then we achieve warp effeciciency where all the threads are exectuting the same instructions.

@@ -96,9 +96,9 @@ timing_csv_names = [
                     "timing_csvs/emb_dim.csv","timing_csvs/num_heads.csv",
                     "timing_csvs/emb_dim_opt.csv"
                     # "timing_csvs/parallel_vs_serial_timing.csv", 
-                    "timing_csvs/seq_length.csv"]
+                    "timing_csvs/seq_len.csv"]
 
-# timing_csv_names = ["timing_csvs/grid_search.csv"]
+timing_csv_names = ["timing_csvs/seq_len.csv"]
 
 files = {
     "q_file": "q_matrix.txt",

@@ -91,6 +91,6 @@ for var, log in one_var.items():
     df = pd.read_csv(f"timing_csvs/{var}.csv")
     print(df)
     df = df[df['time'] >= 0]
-    plot_and_save(df, var, 'time', f"timing_plots/{var}.png", show_loglog=log)
+    plot_and_save(df, var, 'time', f"timing_plots/{var}.png", show_loglog=True)
 
 
