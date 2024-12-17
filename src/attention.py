@@ -27,15 +27,15 @@ def read_matrix(file_name, batch_size, num_heads,seq_len, emb_dim):
 def run_from_frame(df, row, warmups=1, repeats=8, check=False):
     row = df.iloc[row]
 
-    batch_size, num_heads, seq_len, emb_dim = row["batch_size"], row["num_heads"], row["seq_len"], row["emb_dim"]
+    batch_size, num_heads, seq_len, emb_dim = int(row["batch_size"]), int(row["num_heads"]), int(row["seq_len"]), int(row["emb_dim"])
     
     if check:
         q_matrix = write_matrix(create_random(batch_size, num_heads,seq_len, emb_dim), files["q_file"])
         k_matrix = write_matrix(create_random(batch_size, num_heads,seq_len, emb_dim), files["k_file"])
         v_matrix = write_matrix(create_random(batch_size, num_heads,seq_len, emb_dim), files["v_file"])
 
-    B_c, B_r = row["B_c"], row["B_r"]
-    block_dim_y = row["block_dim_y"]
+    B_c, B_r = int(row["B_c"]), int(row["B_r"])
+    block_dim_y = int(row["block_dim_y"])
     
     if not(seq_len % B_r == 0 and emb_dim % B_c == 0):
         print("Block size doesn't divide")
@@ -90,12 +90,15 @@ def run_from_frame(df, row, warmups=1, repeats=8, check=False):
         return -3
 
 # timing_csv_names = ["timing_csvs/emb_dim.csv"]
-timing_csv_names = ["timing_csvs/B_c.csv","timing_csvs/B_r.csv",
+timing_csv_names = [
+    # "timing_csvs/B_c.csv","timing_csvs/B_r.csv",
                     "timing_csvs/batch_size.csv", "timing_csvs/block_dim_y.csv",
                     "timing_csvs/emb_dim.csv","timing_csvs/num_heads.csv",
-                    "timing_csvs/parallel_vs_serial_timing.csv", "timing_csvs/seq_length.csv"]
+                    "timing_csvs/emb_dim_opt.csv"
+                    # "timing_csvs/parallel_vs_serial_timing.csv", 
+                    "timing_csvs/seq_length.csv"]
 
-timing_csv_names = ["timing_csvs/grid_search.csv"]
+# timing_csv_names = ["timing_csvs/grid_search.csv"]
 
 files = {
     "q_file": "q_matrix.txt",
@@ -105,15 +108,16 @@ files = {
 output_file = "output.txt"
 check = False
 
-for file_name in timing_csv_names:
-    df = pd.read_csv(file_name)
 
-    if check:
-        global_max_error = 0
-        for row in range(len(df)):
-            time, error_max, error_mean = run_from_frame(df, row, check=True)
-            global_max_error = max(global_max_error, error_max)
-        print(global_max_error)
-    else:
+if check:
+    df = pd.read_csv("timings.csv")
+    global_max_error = 0
+    for row in range(len(df)):
+        time, error_max, error_mean = run_from_frame(df, row, check=True)
+        global_max_error = max(global_max_error, error_max)
+    print(global_max_error)
+else:
+    for file_name in timing_csv_names:
+        df = pd.read_csv(file_name)
         df["time"] = df.index.to_series().apply(lambda row: run_from_frame(df, row))
         df.to_csv(file_name,index=False)

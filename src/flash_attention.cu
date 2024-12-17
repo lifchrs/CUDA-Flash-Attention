@@ -228,6 +228,14 @@ __global__ void parallel_flash_attn_kernel(
 
     const int matrix_head_batch_offset = (num_heads * batch_idx + head_idx) * (N * d);
     const int vector_head_batch_offset = (num_heads * batch_idx + head_idx) * N;
+    const int tile_row_idx = threadIdx.x;
+    const int q_tile_idx = blockIdx.z;
+    const int output_row_idx = q_tile_idx * B_r + tile_row_idx;
+
+    for (int h = 0; h < d; h++)
+    {
+        Q_i[tile_row_idx * d + h] = Q[matrix_head_batch_offset + q_tile_idx * B_r * d + tile_row_idx * d + h];
+    }
 
     for (int j = 0; j < T_c; j++)
     {
@@ -246,15 +254,10 @@ __global__ void parallel_flash_attn_kernel(
         // and we need to make sure that the tiles of K and V are in sram
         __syncthreads();
 
-        int i = blockIdx.z;
+        // int i = ;
         // for (int i = 0; i < T_r; i++)
         // {
-        const int tile_row_idx = threadIdx.x;
 
-        for (int h = 0; h < d; h++)
-        {
-            Q_i[tile_row_idx * d + h] = Q[matrix_head_batch_offset + i * B_r * d + tile_row_idx * d + h];
-        }
         for (int k_idx = 0; k_idx < B_c; k_idx++)
         {
             float score = 0.0f;
@@ -277,7 +280,6 @@ __global__ void parallel_flash_attn_kernel(
             sum += S[tile_row_idx * B_c + k_idx];
         }
 
-        const int output_row_idx = i * B_r + tile_row_idx;
         float prev_m = m[vector_head_batch_offset + output_row_idx];
         float prev_l = l[vector_head_batch_offset + output_row_idx];
         float new_m = max(prev_m, max_val);
