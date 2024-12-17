@@ -345,7 +345,7 @@ void forward_parallel(
     cudaMemcpy(O_d, O_h, matrix_size, cudaMemcpyHostToDevice);
     cudaMemcpy(l_d, l_h, vector_size, cudaMemcpyHostToDevice);
     cudaMemcpy(m_d, m_h, vector_size, cudaMemcpyHostToDevice);
-    fprintf(stderr, "shared memory: %d bytes\n", sram_size);
+    // fprintf(stderr, "shared memory: %d bytes\n", sram_size);
 
     dim3 grid_dim(batch_size, num_heads, T_r);
     dim3 block_dim(B_r);

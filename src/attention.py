@@ -24,7 +24,7 @@ def read_matrix(file_name, batch_size, num_heads,seq_len, emb_dim):
     return np.loadtxt(file_name, dtype=float).reshape(batch_size, num_heads,seq_len, emb_dim)
 
 
-def run_from_frame(df, row, warmups=1, repeats=2, check=False):
+def run_from_frame(df, row, warmups=1, repeats=8, check=False):
     row = df.iloc[row]
 
     batch_size, num_heads, seq_len, emb_dim = row["batch_size"], row["num_heads"], row["seq_len"], row["emb_dim"]
@@ -90,10 +90,12 @@ def run_from_frame(df, row, warmups=1, repeats=2, check=False):
         return -3
 
 # timing_csv_names = ["timing_csvs/emb_dim.csv"]
-timing_csv_names = ["timing_csvs/B_c_scaling.csv","timing_csvs/B_r_scaling.csv",
+timing_csv_names = ["timing_csvs/B_c.csv","timing_csvs/B_r.csv",
                     "timing_csvs/batch_size.csv", "timing_csvs/block_dim_y.csv",
                     "timing_csvs/emb_dim.csv","timing_csvs/num_heads.csv",
                     "timing_csvs/parallel_vs_serial_timing.csv", "timing_csvs/seq_length.csv"]
+
+timing_csv_names = ["timing_csvs/grid_search.csv"]
 
 files = {
     "q_file": "q_matrix.txt",
@@ -113,5 +115,5 @@ for file_name in timing_csv_names:
             global_max_error = max(global_max_error, error_max)
         print(global_max_error)
     else:
-        df["Time"] = df.index.to_series().apply(lambda row: run_from_frame(df, row))
+        df["time"] = df.index.to_series().apply(lambda row: run_from_frame(df, row))
         df.to_csv(file_name,index=False)
