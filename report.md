@@ -83,14 +83,29 @@ This shows roughly constant time until it jumps significantly, we hypothesize th
 
 After spawning blocks for each $Q_i$, there are now significantly more blocks than can be simultaneously run on the SMs, this means that as we scale up the number of blocks, parallelism doesn't increase. This creates the perfect linear scaling we see as the number of waves per SM scales with the problem size.
 
-## Attempted Optimizations
+
+### Performance Bottlenecks and Attempted Optimizations
+
+When profiling our code, it became apparent that our naive matrix multiply algorithm was significnatly impacting our code's performance and this is supported by multiple metrics. Firstly, for larger block sizes, we get the compute throughput is only 7.37%, which is far from optimal. Furthermore, the L1/TEX Cache Throughput is nearly at 100% and for very large blocks, even the L2 Cache Throughput starts to be significantly used. In contrast, smaller block sizes use about half of the L1/TEX Cache Throughput and nearly none of the L2 Cache Throughput. These metrics are all consistent with our understanding of the matrix multiply algorithm (as learned from Project 1 in this course).
+
+Another bottleneck that we observed was a very low theoretical occupancy. Occupancy is the ratio of maximum active warps on an SM to the maximum supported concurrent warps on an SM. Our theoretical occupancy was being bottlenecked when we would increase 
+
+
 
 ![Before blocks per Q_i](timing_plots_before_qi/seq_len.png)
 ![After blocks per Q_i](timing_plots/seq_len.png)
 Spawning a threadblocks for each $Q_i$ sped up the implementation significantly, we can see in the scaling law of the sequence length  
 
 
-We attempted to use static shared memory rather than dynamic static memory, this involved changing the block of memory we were using inside the kernel to load $Q_i, K_j, V_j, O_i$ from
+One result that was concerning was the high usage of dynamic shared memory, but no usage of static shared memory. Since we were allocating the memory at runtime with command line arguments, we realized via ncu profiling (shown below) that all of our shared memory was dynamically allocated. 
+
+```    
+    Driver Shared Memory Per Block       Kbyte/block            1.02
+    Dynamic Shared Memory Per Block      Kbyte/block           49.15
+    Static Shared Memory Per Block        byte/block               0 
+```
+
+Since static shared memory should be faster than dynamic shared memory, we attempted to use it rather than dynamic shared memory. This involved changing the block of memory we were using inside the kernel to load $Q_i, K_j, V_j, O_i$ from
 ```cpp
 extern __shared__ float sram[];
 ```
@@ -99,4 +114,15 @@ to
 constexpr int size = 2 * B_r * d + 2 * B_c * d;
 __shared__ float sram[size];
 ```
-This set the size of the SRAM at compile time allowing it to be static shared memory. We thought this would be faster because the
+This set the size of the SRAM at compile time allowing it to be static shared memory. We found this version of the code to be up to 60% faster than the DRAM code. 
+
+
+
+When profiling, we found that it used the exact same amount of dynamic shared memory as the old code, but it also used static shared memory. Interestingly, we got a 10-20% decrease in L1/TEX Cache Throughput. Despite this, we found that the compute throughput was lower and the waves per SM were significnatly increased. The reason this is the case is because each SM stops processing blocks in parallel when it runs out of resources, such as threads or static/dynamic memory allocated. Since each block wants a relatively large chunk of SRAM and there is significantly less SRAM than DRAM, the number of blocks that can run concurrently is lowered. Therefore, more blocks need to run in serial, but since each block runs faster with SRAM than with DRAM, this leads to the SRAM code still having better performance when the tile sizes are large (and hence there are less blocks). 
+
+This logic seems to imply that for parameters that result in more blocks (such as by increase the number of heads/batch size or decreasing B_r/B_c), SRAM would become slower. Testing supports this idea as when we halved both B_r and B_c, our SRAM code ran at approximately the same speed or slower as our DRAM code.
+
+### Future work
+
+If we had more time, the main optimization would be using a library package for the matrix multiply operation in the kernel. CUTLASS (CUDA Templates for Linear Algebra Subroutines) implements all the revelant GEMM computations for C++ code inside of CUDA ```__global__``` functions. We attempted to get this package working, but it was throwing errors that we were unable to fix. We believe that CUTLASS would solve many of our bottlenecks, including our very large waves per SM and low theoretical warp utilization.
+
