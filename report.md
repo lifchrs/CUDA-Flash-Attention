@@ -14,7 +14,7 @@ Since attention is typically multiheaded (where the input matrix is instead a 3d
 
 In order to implement this algorithm in CUDA, we exploited the embarrassing parallelism across heads and batches by making our grid includes the number of heads and batch size as dimensions. This leaves each block having to handle $T_r$ (the number of tiles that span $Q$) tiles of computation. Then, we create a thread to handle each row of the tile. This allows each thread to work on building a row of $O_i$ independently and requires synchronization only when moving to the next block to make sure that all threads have finished with the memory in SRAM before it is replaced. This worked quite well, but we saw one further area of optimization - to have each block handle only one tile, by adding $T_r$ as the third dimension of the grid. This way, we add another dimension of parallelization that leads to each thread only needing to tend to exactly one row of the output matrix.
 
-This strategy explicitly ties our launch parameters to our problem size. Specifically, our grid dim is $(\text{batch_size}, \text{num_heads}, T_r)$ and our block dim is $B_r$. The main area for further improvements would be to allocate more threads per block to assist with matrix multiply, however, we did not have enough time to get cutlass working (which uses all threads in the block to perform the matrix multiply) or to implement a more parallel version of matrix multiply.
+This strategy explicitly ties our launch parameters to our problem size. Specifically, our grid dim is $(\textit{Batch Size}, \textit{Num Heads}, T_r)$ and our block dim is $B_r$. The main area for further improvements would be to allocate more threads per block to assist with matrix multiply, however, we did not have enough time to get cutlass working (which uses all threads in the block to perform the matrix multiply) or to implement a more parallel version of matrix multiply.
 
 ## Scaling results
 
@@ -163,11 +163,8 @@ If we had more time, the main optimization would be using a library package for 
 
 CUTLASS (or any optimized GEMM algorithm) would have a few optimizations, first, it makes use of all threads in the block to do the matrix multiplication, this would allow our blocks to make use of more threads on the same amount of memory which would mean that our SMs resource utilization (memory and threads) would be more balanced. Additionally, am optimized GEMM algorithm would make better use of the L1 and L2 caches, in many of the cases we profiled our L1 throughput was above 95% suggesting it was a bottleneck. The only time this wasn't the case was when we used static shared memory, however, in this case our theoretical warp utilization (and actual) is very low (~6%) and so would benefit from having more threads per block to increase this value and speedup the computation per block.
 
-Some Resources Used:
-https://arxiv.org/abs/2205.14135
-
-https://gordicaleksa.medium.com/eli5-flash-attention-5c44017022ad
-
-https://github.com/tspeterkim/flash-attention-minimal/
-
+Some Resources Used:\
+https://arxiv.org/abs/2205.14135 \
+https://gordicaleksa.medium.com/eli5-flash-attention-5c44017022ad \
+https://github.com/tspeterkim/flash-attention-minimal/ \
 https://medium.com/@sthanikamsanthosh1994/introduction-to-flash-attention-a-breakthrough-in-efficient-attention-mechanism-3eb47e8962c3
