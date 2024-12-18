@@ -122,6 +122,19 @@ When profiling, we found that it used the exact same amount of dynamic shared me
 
 This logic seems to imply that for parameters that result in more blocks (such as by increase the number of heads/batch size or decreasing B_r/B_c), SRAM would become slower. Testing supports this idea as when we halved both B_r and B_c, our SRAM code ran at approximately the same speed or slower as our DRAM code.
 
+### Comparison to PyTorch
+
+PyTorch uses cuBLAS which is obviously an optimized matrix multiplication algorithm but that does not take advantage of the blocking and the fused kernel we can for our Flash Attention implementation. For PyTorch, we time both including the time to move the memory to and from the GPU and without. For our implementation we always include moving the memory to the GPU but measure with and without a warmup (which significantly reduces the time taken to transfer the memory). The other large advantage of Flash Attention is that blocking means that we can handle much larger size matrices because of blocking and the fact that we do not materialize the $N\times N$ attention matrix. 
+
+Times are in ms.
+
+|Batch Size| Num Heads | Sequence Length | Embedding Dimension | PyTorch (w/o transfer) | Ours (with warmup) | PyTorch (with GPU transfer) | Ours (no warmup)
+|--|--|--|--|--|--|--|--|
+|2|2|4096|32|19.309| 24.4337|497.18|270.294|
+|4|4|4096|32|OOM| 73.9319|OOM|322.257|
+|4|4|2048|32|59.883|25.1466 |539.560|282.098|
+|4|4|2048|64|129.280| 56.9742|576.090|308.339|
+
 ### Future work
 
 If we had more time, the main optimization would be using a library package for the matrix multiply operation in the kernel. CUTLASS (CUDA Templates for Linear Algebra Subroutines) implements all the relevant GEMM computations for C++ code inside of CUDA ```__global__``` functions. We attempted to get this package working, but it was throwing errors that we were unable to fix. We believe that CUTLASS would solve many of our bottlenecks, including our very large waves per SM and low theoretical warp utilization.
