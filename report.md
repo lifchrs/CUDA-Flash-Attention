@@ -88,9 +88,28 @@ After spawning blocks for each $Q_i$, there are now significantly more blocks th
 
 When profiling our code, it became apparent that our naive matrix multiply algorithm was significantly impacting our code's performance and this is supported by multiple metrics. Firstly, for larger block sizes, we get the compute throughput is only 7.37%, which is far from optimal. Furthermore, the L1/TEX Cache Throughput is nearly at 100% and for very large blocks, even the L2 Cache Throughput starts to be significantly used. In contrast, smaller block sizes use about half of the L1/TEX Cache Throughput and nearly none of the L2 Cache Throughput. These metrics are all consistent with our understanding of the matrix multiply algorithm (as learned from Project 1 in this course).
 
-Another bottleneck that we observed was a very low theoretical occupancy. Occupancy is the ratio of maximum active warps on an SM to the maximum supported concurrent warps on an SM. Our theoretical occupancy was being bottlenecked when we would increase 
+Another bottleneck that we observed was a very low theoretical occupancy. Occupancy is the ratio of maximum active warps on an SM to the maximum supported concurrent warps on an SM. Our theoretical occupancy was being bottlenecked when we would increase $B_r, B_c$ or $d$ since these factors would increase the amount of memory we would allocate and the SM was being limited by the amount of shared memory, as the profiler shows:
 
+```
+    Section: Occupancy
+    ------------------------------- ----------- ------------
+    Metric Name                     Metric Unit Metric Value
+    ------------------------------- ----------- ------------
+    Block Limit SM                        block           32
+    Block Limit Registers                 block            8
+    Block Limit Shared Mem                block            1
+    Block Limit Warps                     block            8
+    Theoretical Active Warps per SM        warp            8
+    Theoretical Occupancy                     %        12.50
+    Achieved Occupancy                        %        12.50
+    Achieved Active Warps Per SM           warp         8.00
+    ------------------------------- ----------- ------------
 
+    OPT   This kernel's theoretical occupancy (12.5%) is limited by the required amount of shared memory. See the CUDA Best Practices Guide (https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#occupancy) for more details on optimizing occupancy.   
+```
+Notably, these results tell us that we are also achieving optimal occupancy, meaning our loads are not imbalanced (so we're not spawning an entire warp for one thread). We believe that having more threads within a block to do work would increase our occupancy since they would be sharing the same memory already allocated (hence the number of blocks that can be placed on an SM remains constant), but more warps would be able to be launched.
+
+We also noticed that depending on the launch parameters, the waves per SM would be a relatively large number (up to 19.55). This is because the number of blocks we spawn is proportional to the sequence length, number of heads, and batch size (all of which directly determine our launch parameters based on our parallelization). This would imply that if we could parallelize our code in such a way to minimize the number of blocks spawned (such as by merging blocks), it would speed up our implementation.
 
 ![Before blocks per Q_i](timing_plots_before_qi/seq_len.png)
 ![After blocks per Q_i](timing_plots/seq_len.png)
@@ -114,13 +133,16 @@ to
 constexpr int size = 2 * B_r * d + 2 * B_c * d;
 __shared__ float sram[size];
 ```
-This set the size of the SRAM at compile time allowing it to be static shared memory. We found this version of the code to be up to 60% faster than the DRAM code. 
+This set the size of the SRAM at compile time allowing it to be static shared memory. However, we found this version of the code to be slower than the DRAM code. When profiling, we found that it used the exact same amount of dynamic shared memory as the old code, but it also used static shared memory. Interestingly, we got a 10-20% decrease in L1/TEX Cache Throughput. Despite this, we found that the compute throughput was lower and the waves per SM were significantly increased. The reason this is the case is because each SM stops processing blocks in parallel when it runs out of resources, such as threads or static/dynamic memory allocated. Since each block wants a relatively large chunk of SRAM and there is significantly less SRAM than DRAM, the number of blocks that can run concurrently is lowered. Therefore, despite each block runs faster with SRAM than with DRAM, more blocks need to run in serial, leading to the SRAM code having worse performance than the DRAM code.
+
+This logic seems to imply that for parameters that result in less blocks (such as by decreasing the number of heads/batch size or increasing $B_r/B_c$), SRAM would become faster. Testing supports this idea as when we doubled both $B_r$ and $B_c$, our SRAM code caught up to our DRAM code.
 
 
-
-When profiling, we found that it used the exact same amount of dynamic shared memory as the old code, but it also used static shared memory. Interestingly, we got a 10-20% decrease in L1/TEX Cache Throughput. Despite this, we found that the compute throughput was lower and the waves per SM were significantly increased. The reason this is the case is because each SM stops processing blocks in parallel when it runs out of resources, such as threads or static/dynamic memory allocated. Since each block wants a relatively large chunk of SRAM and there is significantly less SRAM than DRAM, the number of blocks that can run concurrently is lowered. Therefore, more blocks need to run in serial, but since each block runs faster with SRAM than with DRAM, this leads to the SRAM code still having better performance when the tile sizes are large (and hence there are less blocks). 
-
-This logic seems to imply that for parameters that result in more blocks (such as by increase the number of heads/batch size or decreasing B_r/B_c), SRAM would become slower. Testing supports this idea as when we halved both B_r and B_c, our SRAM code ran at approximately the same speed or slower as our DRAM code.
+| $d, B_c, B_r$ | SRAM time (ns)   | DRAM time (ns) |
+| -------- | -------- | ------- |
+| 16 64 32 | 3.19539e+07 | 2.13208e+07 |
+| 16 64 64 | 3.39494e+07 | 2.25984e+07  |
+| 16 128 64 | 3.52038e+07 |  3.71748e+07  |
 
 ### Comparison to PyTorch
 
