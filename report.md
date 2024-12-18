@@ -162,3 +162,9 @@ Times are in ms.
 If we had more time, the main optimization would be using a library package for the matrix multiply operation in the kernel. CUTLASS (CUDA Templates for Linear Algebra Subroutines) implements all the relevant GEMM computations for C++ code inside of CUDA ```__global__``` functions. We attempted to get this package working, but it was throwing errors that we were unable to fix. We believe that CUTLASS would solve many of our bottlenecks, including our very large waves per SM and low theoretical warp utilization.
 
 CUTLASS (or any optimized GEMM algorithm) would have a few optimizations, first, it makes use of all threads in the block to do the matrix multiplication, this would allow our blocks to make use of more threads on the same amount of memory which would mean that our SMs resource utilization (memory and threads) would be more balanced. Additionally, am optimized GEMM algorithm would make better use of the L1 and L2 caches, in many of the cases we profiled our L1 throughput was above 95% suggesting it was a bottleneck. The only time this wasn't the case was when we used static shared memory, however, in this case our theoretical warp utilization (and actual) is very low (~6%) and so would benefit from having more threads per block to increase this value and speedup the computation per block.
+
+Some Resources Used:
+https://arxiv.org/abs/2205.14135
+https://gordicaleksa.medium.com/eli5-flash-attention-5c44017022ad
+https://github.com/tspeterkim/flash-attention-minimal/
+https://medium.com/@sthanikamsanthosh1994/introduction-to-flash-attention-a-breakthrough-in-efficient-attention-mechanism-3eb47e8962c3
