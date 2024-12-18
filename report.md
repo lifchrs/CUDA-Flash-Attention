@@ -1,10 +1,10 @@
-# Flash Attention Final Report
+# CS 5220 Final: Flash Attention
 Adhitya Polavaram (ap977), Alkis Boukas (ab2453), JT Klenke (jtk96)
 
 [Link to code](https://github.com/lifchrs/CUDA-Flash-Attention)
 
 ## Introduction
-Attention is a ubiquitous computation used in transformers. It processes a sequence of embeddings that represent the tokens. Mathematically, it involves 3 sequence length by embedding dimension (shortened to $N\times d$) matrices, $Q$, $K$, $V$. The attention computation, $\text{softmax}(\frac{QK^T}{\sqrt{d}})V$, involves computing $QK^T=S$ a large $N\times N$ matrix and then computing a softmax operation over the rows of $S$ before finally multiplying by $V$ to yield a $N\times d$ output matrix. The softmax operation is defined for an $n$ dimensional vector $x$ as $\frac{\exp{x_i}}{\sum_{j=1}^n\exp{x_j}}$, an exponentiation of all entries vectors (in our case rows of $S$) and then a normalization. However, in order to maintain numerical stability in practice, we want to first subtract all values by the max of all values in the row, $m = \max_i(x_i)$. Note that this doesn't change the value of the softmax, and provides numerical stability by making sure that no exponent becomes too large. Given that the softmax operation involves two global values, the maximum and this normalization factor, it would seem that we'd be forced to materialize all of $S$ at once, but with clever updating we can instead keep a running value for the maximum and normalization factor and update past values. The final answer will be mathematically equivalent (although not equivalent in practice because of floating point rounding error). 
+Attention is a ubiquitous computation used in transformers. It processes a sequence of embeddings that each represent a token. Mathematically, it involves 3 sequence length by embedding dimension (shortened to $N\times d$) matrices, $Q$, $K$, $V$. The attention computation, $\text{softmax}(\frac{QK^T}{\sqrt{d}})V$, involves computing $QK^T=S$ a large $N\times N$ matrix and then computing a softmax operation over the rows of $S$ before finally multiplying by $V$ to yield a $N\times d$ output matrix. The softmax operation is defined for an $n$ dimensional vector $x$ as $\frac{\exp{x_i}}{\sum_{j=1}^n\exp{x_j}}$, an exponentiation of all entries vectors (in our case rows of $S$) and then a normalization. However, in order to maintain numerical stability in practice, we want to first subtract all values by the max of all values in the row, $m = \max_i(x_i)$. Note that this doesn't change the value of the softmax, and provides numerical stability by making sure that no exponent becomes too large. Given that the softmax operation involves two global values, the maximum and this normalization factor, it would seem that we'd be forced to materialize all of $S$ at once, but with clever updating we can instead keep a running value for the maximum and normalization factor and update past values. The final answer will be mathematically equivalent (although not equivalent in practice because of floating point rounding error). 
 
 Since $N >> d$, with even longer sequence lengths being used by latest architectures, attentions matrices are typically tall and skinny which means that we want to avoid having to materialize all of $S$. We do this by tiling $Q, K, V$ into $B_r\times B_c$ sized tiles. Then we can make use of the tiles $Q_i, K_j$ to compute a tile of $S$, we keep a running value for the normalization factor and the maximum value for each row (two $B_r$ sized vectors), we can then use these values to update past tiles of the output matrix $O$. Since $\exp(x_i-m_{new}) = \exp(x_i)/\exp(m)$ we can update old values to reflect the new maximum value and similarly update the normalization factor, multiplying by the old factor and dividing by the new one. We do this for each tile, iteratively constructing the final output.
 
@@ -14,7 +14,7 @@ Since attention is typically multiheaded (where the input matrix is instead a 3d
 
 In order to implement this algorithm in CUDA, we exploited the embarrassing parallelism across heads and batches by making our grid includes the number of heads and batch size as dimensions. This leaves each block having to handle $T_r$ (the number of tiles that span $Q$) tiles of computation. Then, we create a thread to handle each row of the tile. This allows each thread to work on building a row of $O_i$ independently and requires synchronization only when moving to the next block to make sure that all threads have finished with the memory in SRAM before it is replaced. This worked quite well, but we saw one further area of optimization - to have each block handle only one tile, by adding $T_r$ as the third dimension of the grid. This way, we add another dimension of parallelization that leads to each thread only needing to tend to exactly one row of the output matrix.
 
-This strategy explicitly ties our launch parameters to our problem size. Specifically, our grid dim is $(\textit{Batch Size}, \textit{Num Heads}, T_r)$ and our block dim is $B_r$. The main area for further improvements would be to allocate more threads per block to assist with matrix multiply, however, we did not have enough time to get cutlass working (which uses all threads in the block to perform the matrix multiply) or to implement a more parallel version of matrix multiply.
+This strategy explicitly ties our launch parameters to our problem size. Specifically, our grid dim is $(\text{batch\_size}, \text{num\_heads}, T_r)$ and our block dim is $B_r$. The main area for further improvements would be to allocate more threads per block to assist with matrix multiply, however, we did not have enough time to get cutlass working (which uses all threads in the block to perform the matrix multiply) or to implement a more parallel version of matrix multiply.
 
 ## Scaling results
 
@@ -91,21 +91,21 @@ When profiling our code, it became apparent that our naive matrix multiply algor
 Another bottleneck that we observed was a very low theoretical occupancy. Occupancy is the ratio of maximum active warps on an SM to the maximum supported concurrent warps on an SM. Our theoretical occupancy was being bottlenecked when we would increase $B_r, B_c$ or $d$ since these factors would increase the amount of memory we would allocate and the SM was being limited by the amount of shared memory, as the profiler shows:
 
 ```
-    Section: Occupancy
-    ------------------------------- ----------- ------------
-    Metric Name                     Metric Unit Metric Value
-    ------------------------------- ----------- ------------
-    Block Limit SM                        block           32
-    Block Limit Registers                 block            8
-    Block Limit Shared Mem                block            1
-    Block Limit Warps                     block            8
-    Theoretical Active Warps per SM        warp            8
-    Theoretical Occupancy                     %        12.50
-    Achieved Occupancy                        %        12.50
-    Achieved Active Warps Per SM           warp         8.00
-    ------------------------------- ----------- ------------
+Section: Occupancy
+------------------------------- ----------- ------------
+Metric Name                     Metric Unit Metric Value
+------------------------------- ----------- ------------
+Block Limit SM                        block           32
+Block Limit Registers                 block            8
+Block Limit Shared Mem                block            1
+Block Limit Warps                     block            8
+Theoretical Active Warps per SM        warp            8
+Theoretical Occupancy                     %        12.50
+Achieved Occupancy                        %        12.50
+Achieved Active Warps Per SM           warp         8.00
+------------------------------- ----------- ------------
 
-    OPT   This kernel's theoretical occupancy (12.5%) is limited by the required amount of shared memory. See the CUDA Best Practices Guide (https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#occupancy) for more details on optimizing occupancy.   
+This kernel's theoretical occupancy (12.5%) is limited by the required amount of shared memory.
 ```
 Notably, these results tell us that we are also achieving optimal occupancy, meaning our loads are not imbalanced (so we're not spawning an entire warp for one thread). We believe that having more threads within a block to do work would increase our occupancy since they would be sharing the same memory already allocated (hence the number of blocks that can be placed on an SM remains constant), but more warps would be able to be launched.
 
@@ -162,9 +162,3 @@ Times are in ms.
 If we had more time, the main optimization would be using a library package for the matrix multiply operation in the kernel. CUTLASS (CUDA Templates for Linear Algebra Subroutines) implements all the relevant GEMM computations for C++ code inside of CUDA ```__global__``` functions. We attempted to get this package working, but it was throwing errors that we were unable to fix. We believe that CUTLASS would solve many of our bottlenecks, including our very large waves per SM and low theoretical warp utilization.
 
 CUTLASS (or any optimized GEMM algorithm) would have a few optimizations, first, it makes use of all threads in the block to do the matrix multiplication, this would allow our blocks to make use of more threads on the same amount of memory which would mean that our SMs resource utilization (memory and threads) would be more balanced. Additionally, am optimized GEMM algorithm would make better use of the L1 and L2 caches, in many of the cases we profiled our L1 throughput was above 95% suggesting it was a bottleneck. The only time this wasn't the case was when we used static shared memory, however, in this case our theoretical warp utilization (and actual) is very low (~6%) and so would benefit from having more threads per block to increase this value and speedup the computation per block.
-
-Some Resources Used:\
-https://arxiv.org/abs/2205.14135 \
-https://gordicaleksa.medium.com/eli5-flash-attention-5c44017022ad \
-https://github.com/tspeterkim/flash-attention-minimal/ \
-https://medium.com/@sthanikamsanthosh1994/introduction-to-flash-attention-a-breakthrough-in-efficient-attention-mechanism-3eb47e8962c3
