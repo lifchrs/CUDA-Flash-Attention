@@ -94,7 +94,7 @@ Another bottleneck that we observed was a very low theoretical occupancy. Occupa
 
 ![Before blocks per Q_i](timing_plots_before_qi/seq_len.png)
 ![After blocks per Q_i](timing_plots/seq_len.png)
-Spawning a threadblocks for each $Q_i$ sped up the implementation significantly, we can see in the scaling law of the sequence length  
+Spawning a threadblocks for each $Q_i$ sped up the implementation significantly, we can see in the scaling law of the sequence length before and after, the actual time is about 50x faster and also scales slightly better. The details as to why this scaling is effective are discussed in the scaling study.
 
 
 One result that was concerning was the high usage of dynamic shared memory, but no usage of static shared memory. Since we were allocating the memory at runtime with command line arguments, we realized via ncu profiling (shown below) that all of our shared memory was dynamically allocated. 
@@ -126,3 +126,4 @@ This logic seems to imply that for parameters that result in more blocks (such a
 
 If we had more time, the main optimization would be using a library package for the matrix multiply operation in the kernel. CUTLASS (CUDA Templates for Linear Algebra Subroutines) implements all the relevant GEMM computations for C++ code inside of CUDA ```__global__``` functions. We attempted to get this package working, but it was throwing errors that we were unable to fix. We believe that CUTLASS would solve many of our bottlenecks, including our very large waves per SM and low theoretical warp utilization.
 
+CUTLASS (or any optimized GEMM algorithm) would have a few optimizations, first, it makes use of all threads in the block to do the matrix multiplication, this would allow our blocks to make use of more threads on the same amount of memory which would mean that our SMs resource utilization (memory and threads) would be more balanced. Additionally, am optimized GEMM algorithm would make better use of the L1 and L2 caches, in many of the cases we profiled our L1 throughput was above 95% suggesting it was a bottleneck. The only time this wasn't the case was when we used static shared memory, however, in this case our theoretical warp utilization (and actual) is very low (~6%) and so would benefit from having more threads per block to increase this value and speedup the computation per block.
