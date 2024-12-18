@@ -165,6 +165,9 @@ CUTLASS (or any optimized GEMM algorithm) would have a few optimizations, first,
 
 Some Resources Used:
 https://arxiv.org/abs/2205.14135
+
 https://gordicaleksa.medium.com/eli5-flash-attention-5c44017022ad
+
 https://github.com/tspeterkim/flash-attention-minimal/
+
 https://medium.com/@sthanikamsanthosh1994/introduction-to-flash-attention-a-breakthrough-in-efficient-attention-mechanism-3eb47e8962c3
